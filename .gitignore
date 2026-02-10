@@ -4,6 +4,7 @@
 /bin
 /build
 .pyc
+.venv
 .pyo
 __pycache__/
 
