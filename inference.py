@@ -1,21 +1,24 @@
 import os
 import torch
 import random
+import config
 from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntensity, Resize, ToTensor
 from torchvision import models
+from config import DATA_DIR
+from config import MODELS_DIR
 
-# MPS apple silicon
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+# Uses apple gpu or nvidia if available or fallback to cpu :)
+device = config.get_device()
 
-# DATASET PATH change this to your dataset path
-dataset_path = "/Users/jackychan/Desktop/bladder_monai_project/data/EndoscopicBladderTissue"
+#
+dataset_path = DATA_DIR/"EndoscopicBladderTissue"
 class_folders = ["HGC", "LGC", "NST", "NTL"]
 
 # Load your trained model
 model = models.resnet18(pretrained=False)
 model.fc = torch.nn.Linear(model.fc.in_features, len(class_folders))
 # Change the path to your model checkpoint
-model.load_state_dict(torch.load("/Users/jackychan/Desktop/bladder_monai_project/model/bladder_model.pth", map_location=device))
+model.load_state_dict(torch.load(MODELS_DIR/"bladder_model.pth", map_location=device))
 model = model.to(device)
 model.eval()
 
