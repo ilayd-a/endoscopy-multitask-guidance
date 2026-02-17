@@ -1,0 +1,9 @@
+# Core Data Science
+numpy<2.0        
+matplotlib
+opencv-python
+tqdm
+
+# Deep Learning (Standard CPU/CUDA agnostic install)
+torch
+torchvision
