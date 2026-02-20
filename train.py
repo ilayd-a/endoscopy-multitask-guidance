@@ -1,4 +1,7 @@
 import ssl
+
+from config import DATA_DIR, get_device
+
 ssl._create_default_https_context = ssl._create_unverified_context
 import os
 from sklearn.model_selection import train_test_split
@@ -15,7 +18,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 
-dataset_path = "/Users/jackychan/Desktop/bladder_monai_project/data/EndoscopicBladderTissue"
+dataset_path = DATA_DIR/"EndoscopicBladderTissue"
 
 class_folders = [f for f in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, f))]
 class_folders.sort()
@@ -99,8 +102,7 @@ train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=0)
 val_loader = DataLoader(val_ds, batch_size=16, num_workers=0)
 
 
-device = torch.device("mps" if torch.backends.mps.is_available() else 
-                     "cuda" if torch.cuda.is_available() else "cpu")
+device = get_device()
 print(f"Using device: {device}")
 
 model = models.resnet18(weights="DEFAULT")
