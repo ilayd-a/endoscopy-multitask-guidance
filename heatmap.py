@@ -7,8 +7,10 @@ from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntens
 from torchvision import models
 import torch.nn.functional as F
 
+from config import MODELS_DIR, DATA_DIR, get_device
+
 # MPS apple silicon
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+device = get_device()
 
 class_folders = ["HGC", "LGC", "NST", "NTL"]
 
@@ -16,7 +18,7 @@ class_folders = ["HGC", "LGC", "NST", "NTL"]
 model = models.resnet18(pretrained=False)
 model.fc = torch.nn.Linear(model.fc.in_features, len(class_folders))
 # Change the path to your model checkpoint
-model.load_state_dict(torch.load("/Users/jackychan/Desktop/bladder_monai_project/model/bladder_model.pth", map_location=device))
+model.load_state_dict(torch.load(MODELS_DIR/"bladder_model.pth", map_location=device))
 model = model.to(device)
 model.eval()
 
@@ -59,7 +61,7 @@ class GradCAM:
 gradcam = GradCAM(model, model.layer4)
 
 #DATASET PATH
-dataset_path = "/Users/jackychan/Desktop/bladder_monai_project/data/EndoscopicBladderTissue"
+dataset_path = DATA_DIR/"EndoscopicBladderTissue"
 
 #Find first image from each class
 image_paths = []
