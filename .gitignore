@@ -3,7 +3,9 @@
 .vscode
 /bin
 /build
+/data
+/heatmap_results
+/models/bladder_model.pth
 .pyc
 .pyo
 __pycache__/
-
