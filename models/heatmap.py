@@ -1,143 +1,99 @@
 import os
-import random
 import torch
 import numpy as np
 import cv2
+from monai.networks.nets import UNet
 from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntensity, Resize, ToTensor
-from torchvision import models
-import torch.nn.functional as F
 
 from config import MODELS_DIR, DATA_DIR, OUTPUT_DIR, get_device
 
-# MPS apple silicon
 device = get_device()
 
-class_folders = ["HGC", "LGC", "NST", "NTL"]
+HEATMAP_THRESHOLD = 0.5   # probability threshold for binary mask
+OUTPUT_SIZE       = (256, 256)
+NUM_SAMPLES       = 20    # minimum 20 validation images as required
 
-# Load trained model
-model = models.resnet18(pretrained=False)
-model.fc = torch.nn.Linear(model.fc.in_features, len(class_folders))
-# Change the path to your model checkpoint
-model.load_state_dict(torch.load(MODELS_DIR/"bladder_model.pth", map_location=device))
-model = model.to(device)
+# ---------------------------------------------------------------------------
+# Load trained UNet
+# ---------------------------------------------------------------------------
+model = UNet(
+    spatial_dims=2,
+    in_channels=3,
+    out_channels=1,
+    channels=(16, 32, 64, 128, 256),
+    strides=(2, 2, 2, 2),
+    num_res_units=2,
+).to(device)
+
+model.load_state_dict(torch.load(MODELS_DIR / "unet_model.pth", map_location=device))
 model.eval()
 
 transform = Compose([
     LoadImage(image_only=True),
     EnsureChannelFirst(),
     ScaleIntensity(),
-    Resize((224, 224)),
+    Resize((256, 256)),
     ToTensor()
 ])
 
-class GradCAM:
-    def __init__(self, model, target_layer):
-        self.model = model
-        self.target_layer = target_layer
-        self.gradients = None
-        self.activations = None
-        target_layer.register_forward_hook(self.save_activation)
-        target_layer.register_backward_hook(self.save_gradient)
+# ---------------------------------------------------------------------------
+# Use VAL images (as required — "20 validation images")
+# ---------------------------------------------------------------------------
+val_img_dir = DATA_DIR / "val" / "images"
 
-    def save_activation(self, module, input, output):
-        self.activations = output.detach()
+if not val_img_dir.exists():
+    raise FileNotFoundError(f"Val images not found at {val_img_dir}")
 
-    def save_gradient(self, module, grad_input, grad_output):
-        self.gradients = grad_output[0].detach()
+all_images = sorted([
+    f for f in os.listdir(val_img_dir)
+    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+])[:NUM_SAMPLES]   # take first 20
 
-    def generate(self, input_tensor, class_idx=None):
-        self.model.zero_grad()
-        output = self.model(input_tensor)
-        if class_idx is None:
-            class_idx = torch.argmax(output, dim=1)
-        loss = output[:, class_idx]
-        loss.backward()
-        weights = torch.mean(self.gradients, dim=(2, 3), keepdim=True)
-        cam = torch.sum(weights * self.activations, dim=1)
-        cam = F.relu(cam).squeeze().cpu().numpy()
-        cam = (cam - cam.min()) / (cam.max() - cam.min())
-        return cam
+print(f"Generating outputs for {len(all_images)} validation images...\n")
 
-gradcam = GradCAM(model, model.layer4)
+# ---------------------------------------------------------------------------
+# Generate outputs
+# Output structure per sample:
+#   output/
+#       000/
+#           pred_mask.png
+#           pred_heatmap.npy
+# ---------------------------------------------------------------------------
+for idx, img_name in enumerate(all_images):
+    img_path = str(val_img_dir / img_name)
 
-#DATASET PATH
-dataset_path = DATA_DIR/"EndoscopicBladderTissue"
-
-#Find first image from each class
-image_paths = []
-print("Finding test images...")
-for class_name in class_folders:
-    class_dir = os.path.join(dataset_path, class_name)
-    if os.path.exists(class_dir):
-        # Get all image files
-        images = [f for f in os.listdir(class_dir) 
-                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
-        if images:
-            random.shuffle(images)
-            # Take first image
-            img_path = os.path.join(class_dir, images[0])
-            image_paths.append(img_path)
-            print(f"  {class_name}: {images[0]}")
-        else:
-            print(f"  WARNING: No images found in {class_name}")
-    else:
-        print(f"  ERROR: Folder not found: {class_dir}")
-
-print(f"\nGenerating heatmaps for {len(image_paths)} images...")
-
-# Create output directory
-output_dir = "heatmap_results"
-os.makedirs(output_dir, exist_ok=True)
-
-for img_path in image_paths:
-    if not os.path.exists(img_path):
-        print(f"Image not found: {img_path}")
-        continue
-    
     try:
-        # Load and transform image
+        # --- Load & transform ---
         img_tensor = transform(img_path).unsqueeze(0).to(device)
-        
-        # Get prediction
+
+        # --- UNet prediction ---
         with torch.no_grad():
-            outputs = model(img_tensor)
-            pred = torch.argmax(outputs, dim=1).item()
-            confidence = torch.nn.functional.softmax(outputs, dim=1)[0][pred].item()
-        
-        print(f"\n{os.path.basename(img_path)}")
-        print(f"  True class: {os.path.basename(os.path.dirname(img_path))}")
-        print(f"  Predicted: {class_folders[pred]} ({confidence:.2%})")
-        
-        # Generate heatmap
-        cam = gradcam.generate(img_tensor, pred)
-        cam_resized = cv2.resize(cam, (224, 224))
+            output   = model(img_tensor)
+            prob_map = torch.sigmoid(output).squeeze().cpu().numpy().astype(np.float32)
 
-        # Load original image
-        original = cv2.imread(img_path)
-        if original is None:
-            print(f"  ERROR: Could not read image with OpenCV")
-            continue
-            
-        original = cv2.resize(original, (224, 224))
-        
-        # Create heatmap overlay
-        heatmap = cv2.applyColorMap(np.uint8(cam_resized * 255), cv2.COLORMAP_JET)
-        overlay = (0.4 * heatmap + 0.6 * original).astype(np.uint8)
-        
-        # Save
-        filename = os.path.basename(img_path)
-        save_path = os.path.join(output_dir, f"CAM_{filename}")
-        cv2.imwrite(save_path, overlay)
-        print(f"  Saved: {save_path}")
+        # --- pred_heatmap: raw probability map (float32, 256x256) ---
+        pred_heatmap = prob_map
 
-        np.save(OUTPUT_DIR / f"heatmap_{filename}", cam_resized)
-        print(OUTPUT_DIR / f"heatmap_{filename}.npy")
+        # --- pred_mask: binary (uint8, 256x256, values 0 or 255 for PNG) ---
+        pred_mask = (prob_map >= HEATMAP_THRESHOLD).astype(np.uint8) * 255
 
-        # Also save original and heatmap separately
-        cv2.imwrite(os.path.join(output_dir, f"original_{filename}"), original)
-        cv2.imwrite(os.path.join(output_dir, f"heatmap_{filename}"), heatmap)
-        
+        # --- Create per-sample output folder: output/000/ ---
+        sample_dir = OUTPUT_DIR / f"{idx:03d}"
+        sample_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Save pred_mask.png ---
+        cv2.imwrite(str(sample_dir / "pred_mask.png"), pred_mask)
+
+        # --- Save pred_heatmap.npy ---
+        np.save(str(sample_dir / "pred_heatmap.npy"), pred_heatmap)
+
+        print(f"[{idx:03d}] {img_name} -> {sample_dir}/")
+
     except Exception as e:
-        print(f"  ERROR processing {img_path}: {e}")
+        print(f"  ERROR on {img_path}: {e}")
 
-print(f"\n Done! Heatmaps saved in '{output_dir}/' folder")
+print(f"\nDone! Outputs saved to '{OUTPUT_DIR}/'")
+print(f"\nNotes for eval team:")
+print(f"  Loss:    DiceLoss (MONAI) — directly optimises pixel overlap with ground truth mask")
+print(f"  Heatmap: UNet sigmoid output (raw per-pixel polyp probability, float32 0-1)")
+print(f"  Mask:    Heatmap thresholded at {HEATMAP_THRESHOLD} → binary PNG (0=background, 255=polyp)")
