@@ -7,7 +7,7 @@ from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntens
 from torchvision import models
 import torch.nn.functional as F
 
-from config import MODELS_DIR, DATA_DIR, get_device
+from config import MODELS_DIR, DATA_DIR, OUTPUT_DIR, get_device
 
 # MPS apple silicon
 device = get_device()
@@ -111,7 +111,7 @@ for img_path in image_paths:
         # Generate heatmap
         cam = gradcam.generate(img_tensor, pred)
         cam_resized = cv2.resize(cam, (224, 224))
-        
+
         # Load original image
         original = cv2.imread(img_path)
         if original is None:
@@ -129,7 +129,10 @@ for img_path in image_paths:
         save_path = os.path.join(output_dir, f"CAM_{filename}")
         cv2.imwrite(save_path, overlay)
         print(f"  Saved: {save_path}")
-        
+
+        np.save(OUTPUT_DIR / f"heatmap_{filename}", cam_resized)
+        print(OUTPUT_DIR / f"heatmap_{filename}.npy")
+
         # Also save original and heatmap separately
         cv2.imwrite(os.path.join(output_dir, f"original_{filename}"), original)
         cv2.imwrite(os.path.join(output_dir, f"heatmap_{filename}"), heatmap)
