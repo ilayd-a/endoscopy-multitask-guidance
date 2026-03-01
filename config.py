@@ -2,7 +2,7 @@ from pathlib import Path
 import torch
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DATA_DIR = PROJECT_DIR/"dataset"
+DATA_DIR = PROJECT_DIR/"dataset"/"data"
 MODELS_DIR = PROJECT_DIR/"models"
 
 # The names of your folders with images for each class go here
