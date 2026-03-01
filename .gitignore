@@ -8,3 +8,9 @@
 __pycache__/
 
 models/*.pth
+
+*.zip
+*.z01
+*.z02
+data/
+sanity_checks/
