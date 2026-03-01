@@ -7,3 +7,4 @@
 .pyo
 __pycache__/
 
+models/*.pth
