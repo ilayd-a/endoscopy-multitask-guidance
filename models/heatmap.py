@@ -11,7 +11,7 @@ device = get_device()
 
 HEATMAP_THRESHOLD = 0.5   # probability threshold for binary mask
 OUTPUT_SIZE       = (256, 256)
-NUM_SAMPLES       = 20    # minimum 20 validation images as required
+NUM_SAMPLES       = 20    # minimum 20 test images as required
 
 # ---------------------------------------------------------------------------
 # Load trained UNet
@@ -37,15 +37,15 @@ transform = Compose([
 ])
 
 # ---------------------------------------------------------------------------
-# Use VAL images (as required — "20 validation images")
+# Use VAL images (as required — "20 test images")
 # ---------------------------------------------------------------------------
-val_img_dir = DATA_DIR / "val" / "images"
+img_dir = DATA_DIR / "test" / "images"
 
-if not val_img_dir.exists():
-    raise FileNotFoundError(f"Val images not found at {val_img_dir}")
+if not img_dir.exists():
+    raise FileNotFoundError(f"Val images not found at {img_dir}")
 
 all_images = sorted([
-    f for f in os.listdir(val_img_dir)
+    f for f in os.listdir(img_dir)
     if f.lower().endswith(('.png', '.jpg', '.jpeg'))
 ])[:NUM_SAMPLES]   # take first 20
 
@@ -60,7 +60,7 @@ print(f"Generating outputs for {len(all_images)} validation images...\n")
 #           pred_heatmap.npy
 # ---------------------------------------------------------------------------
 for idx, img_name in enumerate(all_images):
-    img_path = str(val_img_dir / img_name)
+    img_path = str(img_dir / img_name)
 
     try:
         # --- Load & transform ---
@@ -77,6 +77,10 @@ for idx, img_name in enumerate(all_images):
         # --- pred_mask: binary (uint8, 256x256, values 0 or 255 for PNG) ---
         pred_mask = (prob_map >= HEATMAP_THRESHOLD).astype(np.uint8) * 255
 
+        # --- pred_mask: heatmap ---
+        heatmap_uint8 = (pred_heatmap * 255).clip(0, 255).astype(np.uint8)
+        pred_heatmap_png = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+
         # --- Create per-sample output folder: output/000/ ---
         sample_dir = OUTPUT_DIR / f"{idx:03d}"
         sample_dir.mkdir(parents=True, exist_ok=True)
@@ -86,6 +90,9 @@ for idx, img_name in enumerate(all_images):
 
         # --- Save pred_heatmap.npy ---
         np.save(str(sample_dir / "pred_heatmap.npy"), pred_heatmap)
+
+        cv2.imwrite(str(sample_dir / "pred_heatmap.png"), pred_heatmap_png)
+
 
         print(f"[{idx:03d}] {img_name} -> {sample_dir}/")
 
