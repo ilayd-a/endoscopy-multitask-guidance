@@ -1,2 +1,16 @@
+# Raw dataset folders (never commit these)
+Kvasir-SEG/
+data/
+kvasir-seg.zip
+*.zip
+*.tar.gz
+
+# Kaggle / Bladder dataset
 EndoscopicBladderTissue/
-EndoscopicBladderTissue/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
