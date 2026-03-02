@@ -1,0 +1,16 @@
+.DS_Store
+.idea
+.vscode
+/bin
+/build
+.pyc
+.pyo
+__pycache__/
+
+models/*.pth
+
+*.zip
+*.z01
+*.z02
+data/
+sanity_checks/
