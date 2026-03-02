@@ -1,5 +1,5 @@
 # Core Data Science
-numpy<2.0        
+numpy>=2.0        
 matplotlib
 opencv-python
 tqdm
