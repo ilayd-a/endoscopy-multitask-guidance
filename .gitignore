@@ -14,3 +14,5 @@ models/*.pth
 *.z02
 data/
 sanity_checks/
+eval/results/
+eval/figures/
