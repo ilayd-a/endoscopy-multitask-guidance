@@ -1,7 +1,7 @@
 """
 train_CVCClinicDB.py
 UNet with pretrained ResNet34 encoder trained on CVC-ClinicDB.
-- 320x320 input
+- 256x256 input
 - Dice + BCE loss (Focal made things worse)
 
 - Sequence-based split
@@ -66,7 +66,7 @@ class CVCDataset(Dataset):
 
         # Load mask as grayscale with cv2 — avoids RGBA channel bug
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-        mask = cv2.resize(mask, INPUT_SIZE)
+        mask = cv2.resize(mask, INPUT_SIZE, interpolation=cv2.INTER_NEAREST)
         mask = (mask > 127).astype(np.float32)
         mask = torch.from_numpy(mask).unsqueeze(0)  # (1, H, W)
 
@@ -85,9 +85,6 @@ train_transforms = Compose([
     EnsureChannelFirstd(keys=["image"]),
     ScaleIntensityRanged(keys=["image"], a_min=0, a_max=255, b_min=0.0, b_max=1.0, clip=True),
     Resized(keys=["image"], spatial_size=INPUT_SIZE),
-    RandFlipd(keys=["image"], prob=0.5, spatial_axis=0),
-    RandFlipd(keys=["image"], prob=0.5, spatial_axis=1),
-    RandRotated(keys=["image"], range_x=15, prob=0.5),
     RandGaussianNoised(keys=["image"], prob=0.1, mean=0.0, std=0.01),
     RandAdjustContrastd(keys=["image"], prob=0.3, gamma=(0.7, 1.3)),
     RandGaussianSmoothd(keys=["image"], prob=0.2, sigma_x=(0.25, 1.5), sigma_y=(0.25, 1.5)),
