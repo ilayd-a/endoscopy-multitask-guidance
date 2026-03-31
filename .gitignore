@@ -14,3 +14,7 @@ models/*.pth
 *.z02
 data/
 sanity_checks/
+output/
+outputs/
+eval/results/
+venv/
