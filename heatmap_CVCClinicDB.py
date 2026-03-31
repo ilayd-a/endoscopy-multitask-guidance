@@ -22,7 +22,7 @@ import cv2
 import pandas as pd
 import segmentation_models_pytorch as smp
 from pathlib import Path
-from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntensity, Resize, ToTensor
+from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntensityRanged, Resize, ToTensor
 
 from config import MODELS_DIR, DATA_DIR, OUTPUT_DIR, get_device
 
@@ -54,7 +54,11 @@ model.eval()
 transform = Compose([
     LoadImage(image_only=True),
     EnsureChannelFirst(),
-    ScaleIntensity(),
+    ScaleIntensityRanged(
+        a_min=0, a_max=255,
+        b_min=0.0, b_max=1.0,
+        clip=True
+    ),
     Resize(INPUT_SIZE),
     ToTensor()
 ])
