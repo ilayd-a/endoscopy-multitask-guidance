@@ -7,6 +7,8 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.optim as optim
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import os
 
 from monai.networks.nets import UNet
 from monai.losses import DiceLoss
@@ -177,7 +179,12 @@ num_epochs = 20
 # Training loop
 # ---------------------------------------------------------------------------
 best_val_loss = float("inf")
+best_val_dice = 0.0
 
+train_loss_history = []
+val_loss_history = []
+dice_score_history = []
+epochs = [x for x in range(num_epochs)]
 for epoch in range(num_epochs):
     # --- Train ---
     model.train()
@@ -204,6 +211,7 @@ for epoch in range(num_epochs):
     val_loss = 0.0
     val_total = 0
 
+    dice_scores = []
     with torch.no_grad():
         for images, masks in val_loader:
             images = images.to(device)
@@ -215,16 +223,41 @@ for epoch in range(num_epochs):
             val_loss += loss.item() * images.size(0)
             val_total += images.size(0)
 
+            probs = torch.sigmoid(outputs)
+            preds = (probs > 0.5).float()
+            intersection = (preds * masks).sum(dim=(1, 2, 3))
+            union = preds.sum(dim=(1, 2, 3)) + masks.sum(dim=(1, 2, 3))
+            dice = (2 * intersection / (union + 1e-8)).mean().item()
+            dice_scores.append(dice)
+
+
     val_loss = val_loss / val_total if val_total > 0 else 0.0
+    val_dice = np.mean(dice_scores)
     scheduler.step()
 
-    print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f}")
+    print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f} | Val Dice {val_dice:.4f}")
 
-    if val_loss < best_val_loss:
+    train_loss_history.append(train_loss)
+    val_loss_history.append(val_loss)
+    dice_score_history.append(val_dice)
+
+    if val_dice > best_val_dice:
+        best_val_dice = val_dice
         best_val_loss = val_loss
         save_path = MODELS_DIR / "unet_model.pth"
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val loss: {val_loss:.4f})")
 
-print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
+print(f"\nTraining complete. Best val dice: {best_val_loss:.4f}")
+
+
+plt.plot(epochs, train_loss_history, label="Train Loss")
+plt.plot(epochs, val_loss_history, label="Validation Loss")
+plt.plot(epochs, dice_score_history, label="Dice Score")
+plt.xlabel("Epochs")
+plt.ylabel("Loss / Dice Score")
+plt.legend()
+os.makedirs("results", exist_ok=True)
+plt.savefig("results/kvasir_results.png")
+plt.show()
