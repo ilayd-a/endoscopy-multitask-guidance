@@ -19,8 +19,20 @@ from predictions import (
 )
 
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent / "results"
-HIGHER_IS_BETTER = {"dice", "iou", "pointing_game", "coherence_mer"}
-LOWER_IS_BETTER = {"peak_center_dist"}
+HIGHER_IS_BETTER = {
+    "dice",
+    "iou",
+    "precision",
+    "recall",
+    "boundary_f1",
+    "pointing_game",
+    "coherence_mer",
+}
+LOWER_IS_BETTER = {"peak_center_dist", "abs_area_error"}
+MODE_ALIASES = {
+    "strong": "best",
+    "weak": "worst",
+}
 
 
 def overlay_heatmap(image_rgb: np.ndarray, heatmap: np.ndarray) -> np.ndarray:
@@ -39,28 +51,56 @@ def select_samples(
     mode: str,
     samples: int,
 ) -> pd.DataFrame:
+    mode = normalize_mode(mode)
     if mode == "random":
         return eval_df.sample(n=min(samples, len(eval_df)), random_state=42)
 
     if metric in HIGHER_IS_BETTER:
-        ascending = False
+        best_ranked = eval_df.sort_values(metric, ascending=False).reset_index(drop=True)
+        worst_ranked = eval_df.sort_values(metric, ascending=True).reset_index(drop=True)
     elif metric in LOWER_IS_BETTER:
-        ascending = True
+        best_ranked = eval_df.sort_values(metric, ascending=True).reset_index(drop=True)
+        worst_ranked = eval_df.sort_values(metric, ascending=False).reset_index(drop=True)
     else:
         raise ValueError(f"Unsupported metric for selection: {metric}")
 
-    ranked = eval_df.sort_values(metric, ascending=ascending).reset_index(drop=True)
     if mode == "best":
-        return ranked.head(samples)
+        return best_ranked.head(samples)
     if mode == "worst":
-        return ranked.tail(samples).iloc[::-1]
+        return worst_ranked.head(samples)
     if mode == "median":
-        center = len(ranked) // 2
+        center = len(best_ranked) // 2
         half = samples // 2
         start = max(0, center - half)
-        end = min(len(ranked), start + samples)
-        return ranked.iloc[start:end]
+        end = min(len(best_ranked), start + samples)
+        return best_ranked.iloc[start:end]
     raise ValueError(f"Unsupported selection mode: {mode}")
+
+
+def normalize_mode(mode: str) -> str:
+    return MODE_ALIASES.get(mode, mode)
+
+
+def build_row_label(sample_id: str, metrics_row: pd.Series | None) -> str:
+    if metrics_row is None:
+        return sample_id
+
+    parts = [sample_id]
+    metric_specs = (
+        ("dice", "D"),
+        ("iou", "I"),
+        ("boundary_f1", "BF1"),
+        ("pointing_game", "PG"),
+    )
+    for column, short_name in metric_specs:
+        if column not in metrics_row or pd.isna(metrics_row[column]):
+            continue
+        value = metrics_row[column]
+        if column == "pointing_game":
+            parts.append(f"{short_name} {int(value)}")
+        else:
+            parts.append(f"{short_name} {float(value):.3f}")
+    return "\n".join([parts[0], " | ".join(parts[1:])]) if len(parts) > 1 else parts[0]
 
 
 def main() -> None:
@@ -75,6 +115,18 @@ def main() -> None:
     )
     parser.add_argument("--dataset-root", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)
+    parser.add_argument(
+        "--split-manifest",
+        type=Path,
+        default=None,
+        help="Official split file from the data team (for example splits/val.txt or splits/val.csv).",
+    )
+    parser.add_argument(
+        "--split-column",
+        type=str,
+        default=None,
+        help="Metadata column containing the official split labels.",
+    )
     parser.add_argument(
         "--split",
         type=str,
@@ -94,18 +146,27 @@ def main() -> None:
         "--mode",
         type=str,
         default="worst",
-        choices=["best", "median", "worst", "random"],
+        choices=["best", "strong", "median", "worst", "weak", "random"],
     )
     parser.add_argument("--metric", type=str, default="dice")
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--allow-index-fallback", action="store_true")
+    parser.add_argument(
+        "--selection-csv",
+        type=Path,
+        default=None,
+        help="Optional CSV path for the selected strong/weak cases.",
+    )
     args = parser.parse_args()
+    normalized_mode = normalize_mode(args.mode)
 
     samples = load_samples(
         dataset=args.dataset,
         split=args.split,
         dataset_root=args.dataset_root,
         metadata_path=args.metadata_path,
+        split_manifest=args.split_manifest,
+        split_column=args.split_column,
     )
     sample_map = {sample.sample_id: sample for sample in samples}
 
@@ -118,21 +179,21 @@ def main() -> None:
     )
     prediction_map = {sample.sample_id: prediction for sample, prediction in matches}
 
-    if args.eval_csv is None and args.mode != "random":
+    if args.eval_csv is None and normalized_mode != "random":
         default_csv = (
             args.results_dir
             / f"{args.dataset}_{args.split}_{args.run_name}_per_sample.csv"
         )
         args.eval_csv = default_csv
 
-    if args.mode == "random":
+    if normalized_mode == "random":
         random_df = pd.DataFrame(
             {"sample_id": [sample.sample_id for sample in samples]}
         )
-        selected_ids = random_df.sample(
+        selected_df = random_df.sample(
             n=min(args.samples, len(random_df)),
             random_state=42,
-        )["sample_id"].tolist()
+        )
     else:
         if args.eval_csv is None or not args.eval_csv.exists():
             raise FileNotFoundError(
@@ -140,9 +201,17 @@ def main() -> None:
                 "Run evaluate_outputs.py first or pass --eval-csv."
             )
         eval_df = pd.read_csv(args.eval_csv)
-        selected_ids = select_samples(eval_df, args.metric, args.mode, args.samples)[
-            "sample_id"
-        ].tolist()
+        selected_df = select_samples(
+            eval_df, args.metric, normalized_mode, args.samples
+        ).copy()
+    selected_ids = selected_df["sample_id"].tolist()
+    if not selected_ids:
+        raise ValueError("No samples selected for panel generation.")
+    selected_metric_map = (
+        selected_df.set_index("sample_id").to_dict(orient="index")
+        if len(selected_df.columns) > 1
+        else {}
+    )
 
     panel_rows = []
     for sample_id in selected_ids:
@@ -154,7 +223,16 @@ def main() -> None:
         )
         image_rgb = load_rgb_image(sample.image_path, target_shape=heatmap.shape)
         gt_mask = load_binary_mask(sample.mask_path, target_shape=heatmap.shape)
-        panel_rows.append((sample_id, image_rgb, gt_mask, pred_mask, heatmap))
+        panel_rows.append(
+            (
+                sample_id,
+                image_rgb,
+                gt_mask,
+                pred_mask,
+                heatmap,
+                selected_metric_map.get(sample_id),
+            )
+        )
 
     fig, axes = plt.subplots(len(panel_rows), 4, figsize=(12, 3 * len(panel_rows)))
     axes = np.atleast_2d(axes)
@@ -162,14 +240,19 @@ def main() -> None:
     for col, title in enumerate(titles):
         axes[0, col].set_title(title, fontsize=12, fontweight="bold", pad=10)
 
-    for row_index, (sample_id, image_rgb, gt_mask, pred_mask, heatmap) in enumerate(
+    for row_index, (sample_id, image_rgb, gt_mask, pred_mask, heatmap, metrics_row) in enumerate(
         panel_rows
     ):
         axes[row_index, 0].imshow(image_rgb)
         axes[row_index, 1].imshow(gt_mask, cmap="gray", vmin=0, vmax=1)
         axes[row_index, 2].imshow(pred_mask, cmap="gray", vmin=0, vmax=1)
         axes[row_index, 3].imshow(overlay_heatmap(image_rgb, heatmap))
-        axes[row_index, 0].set_ylabel(sample_id, fontsize=8, rotation=90, labelpad=8)
+        axes[row_index, 0].set_ylabel(
+            build_row_label(sample_id, pd.Series(metrics_row) if metrics_row else None),
+            fontsize=8,
+            rotation=90,
+            labelpad=10,
+        )
 
         for axis in axes[row_index]:
             axis.set_xticks([])
@@ -185,7 +268,12 @@ def main() -> None:
     output_path = args.results_dir / output_name
     fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close(fig)
+    selection_csv = args.selection_csv or args.results_dir / (
+        f"{args.dataset}_{args.split}_{args.run_name}_{args.mode}_{args.metric}_selected.csv"
+    )
+    selected_df.to_csv(selection_csv, index=False)
     print(f"Saved qualitative panel -> {output_path}")
+    print(f"Saved selected cases    -> {selection_csv}")
 
 
 if __name__ == "__main__":

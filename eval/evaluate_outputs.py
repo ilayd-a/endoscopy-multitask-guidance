@@ -4,15 +4,23 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from datasets import PROJECT_ROOT, load_binary_mask, load_samples
 from metrics import (
+    boundary_f1_score,
+    component_count,
+    confusion_counts,
     dice_score,
+    heatmap_peak_value,
     iou_score,
     mask_energy_ratio,
+    mask_area_ratio,
     peak_to_center_distance,
     pointing_game,
+    precision_score,
+    recall_score,
 )
 from predictions import (
     discover_outputs_root,
@@ -27,6 +35,9 @@ DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent / "results"
 SUMMARY_METRICS = (
     "dice",
     "iou",
+    "precision",
+    "recall",
+    "boundary_f1",
     "pointing_game",
     "peak_center_dist",
     "coherence_mer",
@@ -45,6 +56,15 @@ def evaluate_matches(
         heatmap = load_prediction_heatmap(prediction.pred_heatmap_path)
         pred_mask = load_prediction_mask(prediction.pred_mask_path, target_shape=heatmap.shape)
         gt_mask = load_binary_mask(sample.mask_path, target_shape=heatmap.shape)
+        tp, fp, fn, tn = confusion_counts(pred_mask, gt_mask)
+        gt_pixels = int(gt_mask.sum())
+        pred_pixels = int(pred_mask.sum())
+        total_pixels = int(gt_mask.size)
+        intersection_pixels = tp
+        union_pixels = int(((pred_mask > 0) | (gt_mask > 0)).sum())
+        gt_area = mask_area_ratio(gt_mask)
+        pred_area = mask_area_ratio(pred_mask)
+        gt_bool = gt_mask > 0
 
         records.append(
             {
@@ -53,11 +73,33 @@ def evaluate_matches(
                 "run_name": run_name,
                 "sample_id": sample.sample_id,
                 "prediction_dir": prediction.sample_dir.name,
+                "sample_height": int(heatmap.shape[0]),
+                "sample_width": int(heatmap.shape[1]),
+                "gt_pixels": gt_pixels,
+                "pred_pixels": pred_pixels,
+                "tp_pixels": tp,
+                "fp_pixels": fp,
+                "fn_pixels": fn,
+                "tn_pixels": tn,
+                "intersection_pixels": intersection_pixels,
+                "union_pixels": union_pixels,
+                "gt_area_ratio": round(gt_area, 6),
+                "pred_area_ratio": round(pred_area, 6),
+                "abs_area_error": round(abs(pred_area - gt_area), 6),
+                "gt_components": component_count(gt_mask),
+                "pred_components": component_count(pred_mask),
                 "dice": round(dice_score(pred_mask, gt_mask), 4),
                 "iou": round(iou_score(pred_mask, gt_mask), 4),
+                "precision": round(precision_score(pred_mask, gt_mask), 4),
+                "recall": round(recall_score(pred_mask, gt_mask), 4),
+                "boundary_f1": round(boundary_f1_score(pred_mask, gt_mask), 4),
                 "pointing_game": pointing_game(heatmap, gt_mask),
                 "peak_center_dist": round(peak_to_center_distance(heatmap, gt_mask), 2),
                 "coherence_mer": round(mask_energy_ratio(heatmap, gt_mask), 4),
+                "heatmap_peak_value": round(heatmap_peak_value(heatmap), 4),
+                "heatmap_mean": round(float(heatmap.mean()), 4),
+                "heatmap_inside_mean": round(float(heatmap[gt_bool].mean()) if gt_bool.any() else 0.0, 4),
+                "heatmap_outside_mean": round(float(heatmap[~gt_bool].mean()) if (~gt_bool).any() else 0.0, 4),
             }
         )
 
@@ -73,11 +115,21 @@ def summarize_results(df: pd.DataFrame, dataset: str, split: str, run_name: str)
         "metrics": {},
     }
     for metric in SUMMARY_METRICS:
+        series = pd.to_numeric(df[metric], errors="coerce")
+        series = series[series.notna() & np.isfinite(series)]
+        if series.empty:
+            summary["metrics"][metric] = {
+                "mean": None,
+                "std": None,
+                "min": None,
+                "max": None,
+            }
+            continue
         summary["metrics"][metric] = {
-            "mean": round(float(df[metric].mean()), 4),
-            "std": round(float(df[metric].std()), 4),
-            "min": round(float(df[metric].min()), 4),
-            "max": round(float(df[metric].max()), 4),
+            "mean": round(float(series.mean()), 4),
+            "std": round(float(series.std(ddof=0)), 4),
+            "min": round(float(series.min()), 4),
+            "max": round(float(series.max()), 4),
         }
     return summary
 
@@ -102,6 +154,18 @@ def main() -> None:
     )
     parser.add_argument("--dataset-root", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)
+    parser.add_argument(
+        "--split-manifest",
+        type=Path,
+        default=None,
+        help="Official split file from the data team (for example splits/val.txt or splits/val.csv).",
+    )
+    parser.add_argument(
+        "--split-column",
+        type=str,
+        default=None,
+        help="Metadata column containing the official split labels.",
+    )
     parser.add_argument(
         "--split",
         type=str,
@@ -134,6 +198,8 @@ def main() -> None:
         split=args.split,
         dataset_root=args.dataset_root,
         metadata_path=args.metadata_path,
+        split_manifest=args.split_manifest,
+        split_column=args.split_column,
     )
     if args.limit is not None:
         samples = samples[: args.limit]
@@ -165,6 +231,9 @@ def main() -> None:
     print(f"Saved summary JSON       -> {summary_json_path}")
     print()
     for metric, stats in summary["metrics"].items():
+        if stats["mean"] is None:
+            print(f"{metric:20s} unavailable")
+            continue
         print(
             f"{metric:20s} "
             f"{stats['mean']:.4f} +/- {stats['std']:.4f} "

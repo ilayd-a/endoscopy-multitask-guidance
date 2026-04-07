@@ -49,17 +49,27 @@ dataset/CVC-ClinicDB/
   PNG/
     Original/
     Ground Truth/
+  splits/
+    train.txt
+    val.txt
+    test.txt
 ```
 
-The loader uses the current sequence split from the models branch:
+Evaluation does **not** define the official split policy itself.
+It expects the data team to provide one shared split artifact, using either:
 
-- `train`: sequence `1-23`
-- `val`: sequence `24-26`
-- `test`: sequence `27-29`
+- `metadata.csv` with a split column such as `split`, `official_split`, or `dataset_split`
+- `metadata.csv` with boolean split columns such as `train`, `val`, `test` or `is_train`, `is_val`, `is_test`
+- shared manifest files such as `splits/train.txt`, `splits/val.txt`, `splits/test.txt`
+
+If no official split file/column is present, the CVC loader will raise an error instead of silently re-encoding the split inside eval.
 
 ### `kvasir` / `split_folder`
 
-Legacy split-folder loader.
+Supports both:
+
+- legacy split-folder layout
+- `Kvasir-SEG/splits.csv` exported by the data notebook
 
 Expected layout:
 
@@ -76,6 +86,15 @@ dataset/data/
     masks/
 ```
 
+or
+
+```text
+dataset/Kvasir-SEG/
+  splits.csv
+  images/
+  masks/
+```
+
 ## Scripts
 
 ### 1. Evaluate Saved Outputs
@@ -89,6 +108,8 @@ Useful flags:
 
 ```bash
 python3 evaluate_outputs.py --dataset cvc --split test --outputs-dir ../outputs
+python3 evaluate_outputs.py --dataset cvc --split val --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt
+python3 evaluate_outputs.py --dataset cvc --split val --split-column split
 python3 evaluate_outputs.py --dataset cvc --split val --allow-index-fallback
 python3 evaluate_outputs.py --dataset kvasir --split test --dataset-root ../dataset/data
 ```
@@ -103,6 +124,9 @@ Metrics:
 
 - Dice
 - IoU
+- Precision
+- Recall
+- Boundary F1
 - Pointing Game
 - Peak-to-center distance
 - Coherence MER (`mask_energy_ratio`)
@@ -111,19 +135,58 @@ Metrics:
 
 ```bash
 cd eval
-python3 generate_panels.py --dataset cvc --split val --run-name baseline_cvc --mode worst --metric dice
+python3 generate_panels.py --dataset cvc --split val --run-name baseline_cvc --mode weak --metric dice --samples 12
+python3 generate_panels.py --dataset cvc --split val --run-name baseline_cvc --mode strong --metric dice --samples 10
 ```
 
 Modes:
 
 - `best`
+- `strong`
 - `median`
 - `worst`
+- `weak`
 - `random`
 
-This is intended for the eval-team deliverable of best / median / failure examples.
+This is intended for the eval-team deliverable of strong / weak / median qualitative examples.
+Each run also saves a CSV listing the selected cases.
 
-### 3. Plot Training Curves
+### 3. Compare Qualitative Cases Across Runs
+
+```bash
+cd eval
+python3 compare_qualitative.py \
+  --dataset cvc \
+  --split val \
+  --outputs-dirs ../output_baseline ../output_multitask \
+  --labels baseline multitask \
+  --eval-csvs results/cvc_val_baseline_per_sample.csv results/cvc_val_multitask_per_sample.csv \
+  --run-name baseline_vs_multitask \
+  --mode weak \
+  --metric dice \
+  --samples 8
+```
+
+This generates:
+
+- a side-by-side qualitative comparison figure across runs
+- a CSV listing the selected strong/weak cases with per-run metrics
+
+### 4. Analyze Failure Cases
+
+```bash
+cd eval
+python3 failure_analysis.py --dataset cvc --split val --run-name baseline_cvc --metric dice --worst-k 12
+```
+
+This generates:
+
+- a richer per-sample failure-analysis CSV
+- a worst-case CSV ranked by the selected metric
+- individual qualitative figures for the worst cases
+- a short markdown + JSON summary of common failure patterns
+
+### 5. Plot Training Curves
 
 The parser supports either:
 
@@ -136,7 +199,7 @@ python3 plot_training_curves.py ../logs/cvc_pretrained.txt --output results/cvc_
 python3 plot_training_curves.py ../logs/run_a.txt ../logs/run_b.txt --labels baseline multitask --output results/cvc_compare_curves.png
 ```
 
-### 4. Compare Evaluated Runs
+### 6. Compare Evaluated Runs
 
 ```bash
 cd eval
@@ -150,6 +213,7 @@ python3 compare_runs.py \
 This generates:
 
 - a combined CSV
+- a wide CSV summary table
 - a bar chart with mean ± std for the selected metrics
 
 ## Dependencies
