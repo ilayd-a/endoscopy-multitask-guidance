@@ -249,7 +249,7 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val loss: {val_loss:.4f})")
 
-print(f"\nTraining complete. Best val dice: {best_val_loss:.4f}")
+print(f"\nTraining complete. Best val dice: {best_val_dice:.4f}")
 
 
 plt.plot(epochs, train_loss_history, label="Train Loss")
