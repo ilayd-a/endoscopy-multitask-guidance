@@ -21,6 +21,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import os
 
 import segmentation_models_pytorch as smp
 from monai.transforms import (
@@ -136,12 +138,17 @@ def criterion(outputs, masks):
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5)
-num_epochs = 40
+num_epochs = 20
 
 # ---------------------------------------------------------------------------
 # Training loop — tracks Dice score as well as loss
 # ---------------------------------------------------------------------------
 best_val_dice = 0.0
+
+train_loss_history = []
+val_loss_history = []
+dice_score_history = []
+epochs = [x for x in range(num_epochs)]
 
 for epoch in range(num_epochs):
     # --- Train ---
@@ -192,6 +199,9 @@ for epoch in range(num_epochs):
     scheduler.step(val_loss)
 
     print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f} | Val Dice {val_dice:.4f}")
+    train_loss_history.append(train_loss)
+    val_loss_history.append(val_loss)
+    dice_score_history.append(val_dice)
 
     if val_dice > best_val_dice:
         best_val_dice = val_dice
@@ -200,6 +210,7 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val dice: {val_dice:.4f})")
 
+
 print(f"\nTraining complete. Best val Dice: {best_val_dice:.4f}")
 print(f"\nModel notes for paper:")
 print(f"  Architecture : UNet with ResNet34 encoder pretrained on ImageNet")
@@ -207,3 +218,15 @@ print(f"  Loss         : Dice Loss + Binary Cross Entropy")
 print(f"  Optimiser    : Adam (lr=1e-4) with ReduceLROnPlateau scheduler")
 print(f"  Dataset      : Kvasir-SEG, 800 train / 100 val / 100 test")
 print(f"  Input size   : 256x256")
+
+plt.plot(epochs, train_loss_history, label="Train Loss")
+plt.plot(epochs, val_loss_history, label="Validation Loss")
+plt.plot(epochs, dice_score_history, label="Dice Score")
+plt.xlabel("Epochs")
+plt.ylabel("Loss / Dice Score")
+plt.legend()
+os.makedirs("results", exist_ok=True)
+plt.savefig("results/pretrained_kvasir_results.png")
+plt.show()
+
+
