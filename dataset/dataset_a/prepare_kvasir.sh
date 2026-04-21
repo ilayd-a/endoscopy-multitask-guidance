@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# =============================================================================
-# prepare_kvasir.sh  –  Download & prepare the Kvasir-SEG dataset
-#
-# Usage:
-#   bash prepare_kvasir.sh
-#
-# What it does:
-#   1. Downloads kvasir-seg.zip from Simula Research Laboratory
-#   2. Unzips into ./Kvasir-SEG/
-#   3. Verifies the expected 1000 image/mask pairs are present
-# =============================================================================
-
+#=============================================================================
+#prepare_kvasir.sh  –  Download & prepare the Kvasir-SEG dataset
+#=============================================================================
 set -euo pipefail
+
+#✅ Ensure script always runs from its own directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 DATASET_URL="https://datasets.simula.no/downloads/kvasir-seg.zip"
 ZIP_FILE="kvasir-seg.zip"
@@ -24,7 +19,7 @@ if command -v wget &>/dev/null; then
 elif command -v curl &>/dev/null; then
     curl -k -L -o "$ZIP_FILE" "$DATASET_URL"
 else
-    echo "❌ Neither wget nor curl found. Please install one and retry."
+    echo "Neither wget nor curl found. Please install one and retry."
     exit 1
 fi
 
