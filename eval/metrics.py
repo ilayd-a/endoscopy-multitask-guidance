@@ -1,25 +1,61 @@
+from __future__ import annotations
+
+import math
+
 import numpy as np
+from skimage.morphology import dilation, disk
 from skimage.measure import label, regionprops
+from skimage.segmentation import find_boundaries
 
 
-# segmentation metrics
+def _as_bool_mask(mask: np.ndarray) -> np.ndarray:
+    return np.asarray(mask) > 0
+
+
+def _peak_index(heatmap: np.ndarray) -> tuple[int, int]:
+    peak = np.unravel_index(np.argmax(heatmap), heatmap.shape)
+    return int(peak[0]), int(peak[1])
+
+
+def _largest_component_centroid(mask: np.ndarray) -> tuple[float, float] | None:
+    labeled = label(mask.astype(np.uint8))
+    props = regionprops(labeled)
+    if not props:
+        return None
+    largest = max(props, key=lambda prop: prop.area)
+    cy, cx = largest.centroid
+    return float(cy), float(cx)
+
+
+def confusion_counts(pred_mask: np.ndarray, gt_mask: np.ndarray) -> tuple[int, int, int, int]:
+    pred = _as_bool_mask(pred_mask)
+    gt = _as_bool_mask(gt_mask)
+    tp = int((pred & gt).sum())
+    fp = int((pred & ~gt).sum())
+    fn = int((~pred & gt).sum())
+    tn = int((~pred & ~gt).sum())
+    return tp, fp, fn, tn
+
+
+def component_count(mask: np.ndarray) -> int:
+    return int(label(_as_bool_mask(mask).astype(np.uint8)).max())
+
+
+def mask_area_ratio(mask: np.ndarray) -> float:
+    mask_bool = _as_bool_mask(mask)
+    return float(mask_bool.sum() / mask_bool.size) if mask_bool.size else 0.0
+
+
+def heatmap_peak_value(heatmap: np.ndarray) -> float:
+    heatmap_array = np.asarray(heatmap, dtype=np.float32)
+    if heatmap_array.size == 0:
+        return 0.0
+    return float(heatmap_array.max())
+
 
 def dice_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
-    """
-    Compute the Dice coefficient between two binary masks
-
-    Parameters:
-    pred_mask : np.ndarray
-        predicted binary mask (H, W), values in {0, 1}
-    gt_mask : np.ndarray
-        ground-truth binary mask (H, W), values in {0, 1}
-
-    Return:
-    float, dice coefficient in [0, 1]
-    return 1.0 when both masks are empty
-    """
-    pred = pred_mask.astype(bool)
-    gt = gt_mask.astype(bool)
+    pred = _as_bool_mask(pred_mask)
+    gt = _as_bool_mask(gt_mask)
 
     if pred.sum() == 0 and gt.sum() == 0:
         return 1.0
@@ -29,69 +65,86 @@ def dice_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
 
 
 def iou_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
-    """
-    Compute the IoU between two binary masks
-
-    Parameters:
-    pred_mask : np.ndarray
-        predicted binary mask (H, W), values in {0, 1}
-    gt_mask : np.ndarray
-        ground-truth binary mask (H, W), values in {0, 1}
-
-    Return:
-    float, IoU in [0, 1]
-    Returns 1.0 when both masks are empty
-    """
-    pred = pred_mask.astype(bool)
-    gt = gt_mask.astype(bool)
+    pred = _as_bool_mask(pred_mask)
+    gt = _as_bool_mask(gt_mask)
 
     if pred.sum() == 0 and gt.sum() == 0:
         return 1.0
 
     intersection = (pred & gt).sum()
     union = (pred | gt).sum()
-    return float(intersection / union)
+    return float(intersection / union) if union > 0 else 0.0
 
 
-# heatmap metrics
+def precision_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
+    tp, fp, _, _ = confusion_counts(pred_mask, gt_mask)
+    if tp == 0 and fp == 0:
+        return 1.0 if not _as_bool_mask(gt_mask).any() else 0.0
+    return float(tp / (tp + fp))
+
+
+def recall_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
+    tp, _, fn, _ = confusion_counts(pred_mask, gt_mask)
+    if tp == 0 and fn == 0:
+        return 1.0
+    return float(tp / (tp + fn))
+
+
+def boundary_f1_score(
+    pred_mask: np.ndarray,
+    gt_mask: np.ndarray,
+    tolerance: int = 2,
+) -> float:
+    pred = _as_bool_mask(pred_mask)
+    gt = _as_bool_mask(gt_mask)
+
+    if pred.sum() == 0 and gt.sum() == 0:
+        return 1.0
+    if pred.sum() == 0 or gt.sum() == 0:
+        return 0.0
+
+    pred_boundary = find_boundaries(pred, mode="inner")
+    gt_boundary = find_boundaries(gt, mode="inner")
+    if pred_boundary.sum() == 0 and gt_boundary.sum() == 0:
+        return 1.0
+    if pred_boundary.sum() == 0 or gt_boundary.sum() == 0:
+        return 0.0
+
+    footprint = disk(max(1, tolerance))
+    pred_dilated = dilation(pred_boundary, footprint)
+    gt_dilated = dilation(gt_boundary, footprint)
+
+    boundary_precision = float((pred_boundary & gt_dilated).sum() / pred_boundary.sum())
+    boundary_recall = float((gt_boundary & pred_dilated).sum() / gt_boundary.sum())
+    if boundary_precision + boundary_recall == 0.0:
+        return 0.0
+    return float(
+        2.0 * boundary_precision * boundary_recall
+        / (boundary_precision + boundary_recall)
+    )
+
 
 def pointing_game(heatmap: np.ndarray, gt_mask: np.ndarray) -> int:
-    """Pointing Game accuracy for a single sample
-    Parameters:
-    heatmap : np.ndarray
-        predicted heatmap (H, W), float values.
-    gt_mask : np.ndarray
-        ground-truth binary mask (H, W), values in {0, 1}.
-
-    Return:
-    int, 1 if the heatmap peak is inside the mask, 0 otherwise.
-    """
-    peak = np.unravel_index(np.argmax(heatmap), heatmap.shape)
-    return int(gt_mask[peak[0], peak[1]] > 0)
+    peak_y, peak_x = _peak_index(np.asarray(heatmap))
+    gt = _as_bool_mask(gt_mask)
+    return int(gt[peak_y, peak_x])
 
 
 def peak_to_center_distance(heatmap: np.ndarray, gt_mask: np.ndarray) -> float:
-    """Euclidean distance between the heatmap peak and the ground-truth mask centroid
-
-    Parameters:
-    heatmap : np.ndarray
-        predicted heatmap (H, W), float values.
-    gt_mask : np.ndarray
-        ground-truth binary mask (H, W), values in {0, 1}.
-
-    Return:
-    float, Euclidean distance in pixels
-    return float('inf') if the mask is empty
-    """
-    peak = np.unravel_index(np.argmax(heatmap), heatmap.shape)
-
-    labeled = label(gt_mask.astype(np.uint8))
-    props = regionprops(labeled)
-    if len(props) == 0:
+    centroid = _largest_component_centroid(_as_bool_mask(gt_mask))
+    if centroid is None:
         return float("inf")
 
-    largest = max(props, key=lambda r: r.area)
-    centroid = largest.centroid
+    peak_y, peak_x = _peak_index(np.asarray(heatmap))
+    cy, cx = centroid
+    return float(math.sqrt((peak_y - cy) ** 2 + (peak_x - cx) ** 2))
 
-    dist = np.sqrt((peak[0] - centroid[0]) ** 2 + (peak[1] - centroid[1]) ** 2)
-    return float(dist)
+
+def mask_energy_ratio(heatmap: np.ndarray, gt_mask: np.ndarray) -> float:
+    heatmap = np.asarray(heatmap, dtype=np.float32)
+    gt = _as_bool_mask(gt_mask)
+    total_energy = float(heatmap.sum())
+    if total_energy <= 0.0:
+        return 0.0
+    inside_energy = float(heatmap[gt].sum())
+    return inside_energy / total_energy
