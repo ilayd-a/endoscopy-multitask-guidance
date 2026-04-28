@@ -120,6 +120,51 @@ Heatmap / localization metrics:
 Extra per-sample fields include pixel counts, area ratios, component counts,
 false-positive pixels, false-negative pixels, and heatmap summary statistics.
 
+## How To Interpret Outputs
+
+Use `*_summary.csv` or `*_summary.json` for the high-level result of one run.
+These files report mean, standard deviation, minimum, and maximum values for
+the main metrics.
+
+Use `*_per_sample.csv` when you need to inspect individual images. This is the
+best file for finding weak cases, checking false-positive / false-negative
+pixels, and understanding whether a run fails on only a few samples or across
+the whole split.
+
+Higher is better:
+
+- Dice
+- IoU
+- Precision
+- Recall
+- F2
+- Boundary F1
+- Pointing Game
+- Coherence MER
+
+Lower is better:
+
+- MAE
+- Peak-to-center distance
+- false-positive pixels
+- false-negative pixels
+
+Important trade-offs:
+
+- Higher recall with much lower precision means the model finds more target
+  pixels but also predicts more background as target.
+- Higher precision with much lower recall means the model is conservative and
+  may miss target regions.
+- Lower threshold settings should improve recall only if precision, MAE, and
+  qualitative examples remain acceptable.
+- Pointing Game and peak-to-center distance evaluate the heatmap location, not
+  just the segmentation mask.
+- Boundary F1 is useful when Dice / IoU look reasonable but the predicted edge
+  is visibly poor.
+
+Use qualitative panels and failure-analysis figures to confirm whether metric
+changes are visually meaningful.
+
 ## Recommended Workflow
 
 Run these from the repository root or from `eval/`. The examples below use
