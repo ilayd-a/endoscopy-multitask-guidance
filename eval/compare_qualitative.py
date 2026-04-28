@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--dataset",
         type=str,
         default="cvc",
-        choices=["cvc", "kvasir", "split_folder"],
+        choices=["cvc", "kvasir", "split_csv", "split_folder"],
     )
     parser.add_argument("--dataset-root", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)

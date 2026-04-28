@@ -1,220 +1,317 @@
 # Evaluation Pipeline
 
-This directory now contains only the active evaluation pipeline for the endoscopy project.
-It intentionally excludes:
+This folder contains the reusable evaluation pipeline for saved segmentation and
+guidance outputs. It does not train models or run model inference.
 
-- generated figures and result artifacts
-- old `sample_data/` sanity-check arrays
-- bladder-classification evaluation code
-- model-specific inference code
+Use it after the models team has exported predictions for a fixed dataset split.
 
-The active scope is evaluation of saved segmentation / guidance outputs for the current segmentation-guidance track, with `CVC-ClinicDB` as the primary dataset and split-folder datasets such as legacy Kvasir kept as optional support.
+## What This Evaluates
 
-## Expected Prediction Format
+The pipeline evaluates:
 
-The preferred evaluation interface is saved model outputs, not ad hoc local notebooks.
+- binary segmentation masks
+- probability / guidance heatmaps
+- per-sample failures
+- threshold and two-stage decision settings
+- run-to-run quantitative and qualitative comparisons
 
-Each sample folder should contain:
+Generated CSV / PNG outputs are written under `eval/results/` and should not be
+committed.
 
-```text
-outputs/
-  sample_id_or_number/
-    pred_mask.png
-    pred_heatmap.npy
-```
+## File Index
 
-Recommended additions for reliable matching:
+- `evaluate_outputs.py`: main entry point for evaluating saved predictions
+  against ground-truth masks.
+- `threshold_sweep.py`: evaluates different pixel thresholds and optional
+  image-level gating for the two-stage pipeline.
+- `compare_runs.py`: combines summary files from multiple runs into comparison
+  tables and a metric bar chart.
+- `plot_metric_distributions.py`: creates boxplots and histograms from
+  per-sample metric CSVs.
+- `generate_panels.py`: creates single-run qualitative panels for strong,
+  weak, median, or random cases.
+- `compare_qualitative.py`: creates side-by-side qualitative figures across
+  multiple runs for the same selected samples.
+- `failure_analysis.py`: ranks worst cases and tags common failure patterns.
+- `plot_training_curves.py`: plots train / validation loss and optional
+  validation Dice from logs or CSVs.
+- `datasets.py`: shared dataset loading utilities for CVC, split CSV, Kvasir,
+  and generic split-folder layouts.
+- `predictions.py`: shared prediction discovery, loading, and sample-matching
+  utilities.
+- `metrics.py`: shared metric implementations used by the eval scripts.
+- `README.md`: this pipeline guide.
 
-```text
-outputs/
-  000_CVCClinicDB/
-    original_612.png
-    pred_mask.png
-    pred_heatmap.npy
-```
+## Required Inputs
 
-`pred_heatmap.npy` is preferred over `pred_heatmap.png` because it preserves the raw float heatmap.
+### Dataset
 
-## Supported Datasets
+Evaluation needs ground-truth image / mask pairs and a reproducible split.
 
-### `cvc`
+Supported dataset loaders:
 
-Primary active dataset.
+- `cvc`: CVC-ClinicDB layout with `metadata.csv` and an official split artifact.
+- `split_csv`: generic `splits.csv` layout from the data team.
+- `kvasir`: Kvasir split-folder or `Kvasir-SEG/splits.csv` layout.
+- `split_folder`: generic `train/val/test/images` and `train/val/test/masks`.
 
-Expected layout:
+For `cvc`, eval will not define the split itself. Provide one of:
 
-```text
-dataset/CVC-ClinicDB/
-  metadata.csv
-  PNG/
-    Original/
-    Ground Truth/
-  splits/
-    train.txt
-    val.txt
-    test.txt
-```
+- `--split-manifest path/to/val.txt`
+- `--split-column split`
+- files such as `dataset/CVC-ClinicDB/splits/val.txt`
 
-Evaluation does **not** define the official split policy itself.
-It expects the data team to provide one shared split artifact, using either:
+For `split_csv`, the dataset root should contain `splits.csv` with:
 
-- `metadata.csv` with a split column such as `split`, `official_split`, or `dataset_split`
-- `metadata.csv` with boolean split columns such as `train`, `val`, `test` or `is_train`, `is_val`, `is_test`
-- shared manifest files such as `splits/train.txt`, `splits/val.txt`, `splits/test.txt`
+- `split`
+- image path column: `image_path`, `image`, `image_file`, or `png_image_path`
+- mask path column: `mask_path`, `mask`, or `mask_file`
 
-If no official split file/column is present, the CVC loader will raise an error instead of silently re-encoding the split inside eval.
-
-### `kvasir` / `split_folder`
-
-Supports both:
-
-- legacy split-folder layout
-- `Kvasir-SEG/splits.csv` exported by the data notebook
-
-Expected layout:
+Example:
 
 ```text
-dataset/data/
-  train/
-    images/
-    masks/
-  val/
-    images/
-    masks/
-  test/
-    images/
-    masks/
-```
-
-or
-
-```text
-dataset/Kvasir-SEG/
+dataset/CVC-ClinicDB/PNG/augmented/
   splits.csv
   images/
   masks/
 ```
 
-## Scripts
+### Predictions
 
-### 1. Evaluate Saved Outputs
+Each evaluated run should export one folder per sample:
 
-```bash
-cd eval
-python3 evaluate_outputs.py --dataset cvc --split val --run-name baseline_cvc --outputs-dir ../output
+```text
+outputs/
+  sample_id/
+    pred_mask.png
+    pred_heatmap.npy
 ```
 
-Useful flags:
+`pred_mask.png` should be a binary mask. `pred_heatmap.npy` should be the raw
+float probability / confidence map.
 
-```bash
-python3 evaluate_outputs.py --dataset cvc --split test --outputs-dir ../outputs
-python3 evaluate_outputs.py --dataset cvc --split val --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt
-python3 evaluate_outputs.py --dataset cvc --split val --split-column split
-python3 evaluate_outputs.py --dataset cvc --split val --allow-index-fallback
-python3 evaluate_outputs.py --dataset kvasir --split test --dataset-root ../dataset/data
-```
+For reliable matching, use one of these:
 
-Outputs:
+- prediction folder name matches the sample id or filename
+- `source_image.txt` inside each prediction folder
+- `original_<filename>` inside each prediction folder
 
-- `eval/results/<dataset>_<split>_<run>_per_sample.csv`
-- `eval/results/<dataset>_<split>_<run>_summary.csv`
-- `eval/results/<dataset>_<split>_<run>_summary.json`
+Legacy numbered folders can be evaluated with `--allow-index-fallback`, but
+exact sample matching is preferred for final results.
 
-Metrics:
+## Metrics
+
+Segmentation metrics:
 
 - Dice
 - IoU
 - Precision
 - Recall
+- F2
+- MAE
 - Boundary F1
+
+Heatmap / localization metrics:
+
 - Pointing Game
 - Peak-to-center distance
-- Coherence MER (`mask_energy_ratio`)
+- Coherence MER
 
-### 2. Generate Qualitative Panels
+Extra per-sample fields include pixel counts, area ratios, component counts,
+false-positive pixels, false-negative pixels, and heatmap summary statistics.
+
+## Recommended Workflow
+
+Run these from the repository root or from `eval/`. The examples below use
+commands from `eval/`.
+
+1. Evaluate each saved run.
+2. Compare runs with summary tables.
+3. Generate metric distributions.
+4. Generate qualitative strong / weak cases.
+5. Run failure analysis.
+6. Run threshold sweep if comparing lower thresholds or two-stage gating.
+
+## Evaluate Saved Outputs
 
 ```bash
 cd eval
-python3 generate_panels.py --dataset cvc --split val --run-name baseline_cvc --mode weak --metric dice --samples 12
-python3 generate_panels.py --dataset cvc --split val --run-name baseline_cvc --mode strong --metric dice --samples 10
+python3 evaluate_outputs.py \
+  --dataset cvc \
+  --split val \
+  --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt \
+  --outputs-dir ../outputs/baseline \
+  --run-name baseline
+```
+
+For a generic data-team `splits.csv`:
+
+```bash
+python3 evaluate_outputs.py \
+  --dataset split_csv \
+  --dataset-root ../dataset/CVC-ClinicDB/PNG/augmented \
+  --split val \
+  --outputs-dir ../outputs/baseline \
+  --run-name baseline
+```
+
+Outputs:
+
+- `results/<dataset>_<split>_<run>_per_sample.csv`
+- `results/<dataset>_<split>_<run>_summary.csv`
+- `results/<dataset>_<split>_<run>_summary.json`
+
+## Compare Runs
+
+```bash
+python3 compare_runs.py \
+  results/cvc_val_baseline_summary.json \
+  results/cvc_val_deeplabv3_summary.json \
+  --labels baseline deeplabv3 \
+  --output-prefix results/cvc_model_comparison
+```
+
+Outputs:
+
+- combined long-format CSV
+- wide summary CSV
+- metric bar chart
+
+## Plot Metric Distributions
+
+```bash
+python3 plot_metric_distributions.py \
+  results/cvc_val_baseline_per_sample.csv \
+  results/cvc_val_deeplabv3_per_sample.csv \
+  --labels baseline deeplabv3 \
+  --output-prefix results/cvc_metric_distributions
+```
+
+For threshold-sweep outputs:
+
+```bash
+python3 plot_metric_distributions.py \
+  results/cvc_val_thresholds_threshold_per_sample.csv \
+  --group-column setting \
+  --output-prefix results/cvc_threshold_distributions
+```
+
+Outputs:
+
+- distribution summary CSV
+- boxplots
+- histograms
+
+## Generate Qualitative Panels
+
+```bash
+python3 generate_panels.py \
+  --dataset cvc \
+  --split val \
+  --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt \
+  --outputs-dir ../outputs/baseline \
+  --run-name baseline \
+  --mode weak \
+  --metric dice \
+  --samples 12
 ```
 
 Modes:
 
-- `best`
-- `strong`
+- `strong` / `best`
+- `weak` / `worst`
 - `median`
-- `worst`
-- `weak`
 - `random`
 
-This is intended for the eval-team deliverable of strong / weak / median qualitative examples.
-Each run also saves a CSV listing the selected cases.
+Each run saves a panel image and a CSV listing the selected samples.
 
-### 3. Compare Qualitative Cases Across Runs
+## Compare Qualitative Cases Across Runs
 
 ```bash
-cd eval
 python3 compare_qualitative.py \
   --dataset cvc \
   --split val \
-  --outputs-dirs ../output_baseline ../output_multitask \
-  --labels baseline multitask \
-  --eval-csvs results/cvc_val_baseline_per_sample.csv results/cvc_val_multitask_per_sample.csv \
-  --run-name baseline_vs_multitask \
+  --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt \
+  --outputs-dirs ../outputs/baseline ../outputs/deeplabv3 \
+  --labels baseline deeplabv3 \
+  --eval-csvs results/cvc_val_baseline_per_sample.csv results/cvc_val_deeplabv3_per_sample.csv \
+  --run-name baseline_vs_deeplabv3 \
   --mode weak \
   --metric dice \
   --samples 8
 ```
 
-This generates:
+This generates a side-by-side figure for the same selected samples across runs.
 
-- a side-by-side qualitative comparison figure across runs
-- a CSV listing the selected strong/weak cases with per-run metrics
-
-### 4. Analyze Failure Cases
+## Analyze Failure Cases
 
 ```bash
-cd eval
-python3 failure_analysis.py --dataset cvc --split val --run-name baseline_cvc --metric dice --worst-k 12
+python3 failure_analysis.py \
+  --dataset cvc \
+  --split val \
+  --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt \
+  --outputs-dir ../outputs/baseline \
+  --run-name baseline \
+  --metric dice \
+  --worst-k 12
 ```
 
-This generates:
+Outputs:
 
-- a richer per-sample failure-analysis CSV
-- a worst-case CSV ranked by the selected metric
-- individual qualitative figures for the worst cases
-- a short markdown + JSON summary of common failure patterns
+- failure-analysis CSV
+- worst-case CSV
+- individual worst-case figures
+- markdown and JSON failure summary
 
-### 5. Plot Training Curves
+Failure tags are heuristic and intended for analysis, not as ground-truth
+clinical labels.
 
-The parser supports either:
+## Threshold Sweep / Two-Stage Evaluation
 
-- raw training logs with lines like `Epoch 01: Train Loss ... | Val Loss ... | Val Dice ...`
-- CSV files with `epoch`, `train_loss`, `val_loss` and optional `val_dice`
+Use this to compare fixed pixel thresholds with lower thresholds and image-level
+gating.
 
 ```bash
-cd eval
-python3 plot_training_curves.py ../logs/cvc_pretrained.txt --output results/cvc_pretrained_curves.png
-python3 plot_training_curves.py ../logs/run_a.txt ../logs/run_b.txt --labels baseline multitask --output results/cvc_compare_curves.png
+python3 threshold_sweep.py \
+  --dataset cvc \
+  --split val \
+  --split-manifest ../dataset/CVC-ClinicDB/splits/val.txt \
+  --outputs-dir ../outputs/baseline \
+  --run-name thresholds \
+  --pixel-thresholds 0.2 0.3 0.4 0.5 \
+  --image-score-methods mean topk_mean \
+  --image-thresholds 0.01 0.02 0.05
 ```
 
-### 6. Compare Evaluated Runs
+Outputs:
+
+- per-sample CSV for every threshold setting
+- summary CSV / JSON
+- threshold curves
+- precision-recall trade-off plot
+
+Sample-level false-positive counts are only meaningful when the split contains
+images without target regions. Pixel-level FP/FN counts are still reported for
+every sample.
+
+## Plot Training Curves
 
 ```bash
-cd eval
-python3 compare_runs.py \
-  results/cvc_val_baseline_summary.json \
-  results/cvc_val_multitask_summary.json \
-  --labels baseline multitask \
-  --output-prefix results/cvc_model_comparison
+python3 plot_training_curves.py \
+  ../logs/baseline.txt \
+  ../logs/deeplabv3.txt \
+  --labels baseline deeplabv3 \
+  --output results/training_curves.png
 ```
 
-This generates:
+The parser supports raw logs with:
 
-- a combined CSV
-- a wide CSV summary table
-- a bar chart with mean ± std for the selected metrics
+```text
+Epoch 01: Train Loss ... | Val Loss ... | Val Dice ...
+```
+
+It also supports CSV files with `epoch`, `train_loss`, `val_loss`, and optional
+`val_dice`.
 
 ## Dependencies
 
@@ -222,16 +319,15 @@ This generates:
 pip install numpy pandas pillow matplotlib scikit-image
 ```
 
-## PR Scope
+If Matplotlib cannot write to the default config directory, run plotting
+commands with:
 
-If this directory is prepared for merge, the PR should contain:
+```bash
+MPLCONFIGDIR=/tmp python3 <script>.py ...
+```
 
-- reusable evaluation code
-- README / documentation
-- ignore rules for generated outputs
+## Notes
 
-It should not contain:
-
-- generated CSV / PNG results
-- sample arrays
-- outdated side tracks that are not part of the current paper direction
+- Use the same split, resolution, and prediction format for all compared runs.
+- `pred_heatmap.npy` is treated as a normalized probability / confidence map.
+- Evaluation does not generate model predictions.
