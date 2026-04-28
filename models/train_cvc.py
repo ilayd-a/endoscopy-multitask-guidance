@@ -8,7 +8,9 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-import cv2
+import matplotlib.pyplot as plt
+import os
+
 from monai.networks.nets import UNet
 from monai.losses import DiceLoss
 from monai.transforms import (
@@ -28,6 +30,11 @@ MASK_DIR = CVC_DIR / "PNG" / "Ground Truth"
 META     = CVC_DIR / "metadata.csv"
 
 INPUT_SIZE = (256, 256)
+SEED = 42
+
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+
 
 
 
@@ -64,74 +71,6 @@ class CVCDataset(Dataset):
         return image, mask
 
 
-
-
-# ---------------------------------------------------------------------------
-# MONAI Transforms
-# Spatial transforms apply to BOTH image and mask.
-# Intensity transforms apply to IMAGE only.
-# ---------------------------------------------------------------------------
-train_transforms = Compose([
-    LoadImaged(keys=["image", "mask"]),
-    EnsureChannelFirstd(keys=["image", "mask"]),
-
-    ScaleIntensityRanged(
-        keys=["image"],
-        a_min=0, a_max=255,
-        b_min=0.0, b_max=1.0,
-        clip=True
-    ),
-
-    Resized(
-        keys=["image", "mask"],
-        spatial_size=(256, 256),
-        mode=("bilinear", "nearest")
-    ),
-
-    RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
-    RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
-
-    RandRotated(
-        keys=["image", "mask"],
-        range_x=np.pi / 12,   # 15 degrees
-        prob=0.5,
-        mode=("bilinear", "nearest"),
-        padding_mode="zeros"
-    ),
-
-    RandGaussianNoised(keys=["image"], prob=0.1, mean=0.0, std=0.01),
-    RandAdjustContrastd(keys=["image"], prob=0.3, gamma=(0.7, 1.3)),
-    RandGaussianSmoothd(
-        keys=["image"],
-        prob=0.2,
-        sigma_x=(0.25, 1.5),
-        sigma_y=(0.25, 1.5)
-    ),
-
-    ToTensord(keys=["image", "mask"])
-])
-
-val_transforms = Compose([
-    LoadImaged(keys=["image", "mask"]),
-    EnsureChannelFirstd(keys=["image", "mask"]),
-
-    ScaleIntensityRanged(
-        keys=["image"],
-        a_min=0, a_max=255,
-        b_min=0.0, b_max=1.0,
-        clip=True
-    ),
-
-    Resized(
-        keys=["image", "mask"],
-        spatial_size=(256, 256),
-        mode=("bilinear", "nearest")
-    ),
-
-    ToTensord(keys=["image", "mask"])
-])
-
-
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
@@ -145,8 +84,8 @@ print(f"Input size: {INPUT_SIZE}")
 
 print(f"Loading dataset from: {DATA_DIR}")
 
-train_ds = CVCDataset(train_imgs, transform=train_transforms)
-val_ds   = CVCDataset(val_imgs,   transform=val_transforms)
+train_ds = CVCDataset(train_imgs)
+val_ds   = CVCDataset(val_imgs)
 
 train_loader = DataLoader(train_ds, batch_size=8, shuffle=True,  num_workers=0)
 val_loader   = DataLoader(val_ds,   batch_size=8, shuffle=False, num_workers=0)
@@ -181,11 +120,17 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 num_epochs = 20
 
 
+
 # ---------------------------------------------------------------------------
 # Training loop
 # ---------------------------------------------------------------------------
 best_val_loss = float("inf")
+best_val_dice = 0.0
 
+train_loss_history = []
+val_loss_history = []
+dice_score_history = []
+epochs = [x for x in range(num_epochs)]
 for epoch in range(num_epochs):
     # --- Train ---
     model.train()
@@ -212,6 +157,7 @@ for epoch in range(num_epochs):
     val_loss = 0.0
     val_total = 0
 
+    dice_scores = []
     with torch.no_grad():
         for images, masks in val_loader:
             images = images.to(device)
@@ -223,17 +169,41 @@ for epoch in range(num_epochs):
             val_loss += loss.item() * images.size(0)
             val_total += images.size(0)
 
+            probs = torch.sigmoid(outputs)
+            preds = (probs > 0.5).float()
+            intersection = (preds * masks).sum(dim=(1, 2, 3))
+            union = preds.sum(dim=(1, 2, 3)) + masks.sum(dim=(1, 2, 3))
+            dice = (2 * intersection / (union + 1e-8)).mean().item()
+            dice_scores.append(dice)
+
+
     val_loss = val_loss / val_total if val_total > 0 else 0.0
+    val_dice = np.mean(dice_scores)
     scheduler.step()
 
-    print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f}")
+    print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f} | Val Dice {val_dice:.4f}")
 
-    if val_loss < best_val_loss:
+    train_loss_history.append(train_loss)
+    val_loss_history.append(val_loss)
+    dice_score_history.append(val_dice)
+
+    if val_dice > best_val_dice:
+        best_val_dice = val_dice
         best_val_loss = val_loss
-        save_path = MODELS_DIR / "unet_model_cvc.pth"
+        save_path = MODELS_DIR / "unet_model.pth"
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val loss: {val_loss:.4f})")
 
-print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
+print(f"\nTraining complete. Best val dice: {best_val_dice:.4f}")
 
+
+plt.plot(epochs, train_loss_history, label="Train Loss")
+plt.plot(epochs, val_loss_history, label="Validation Loss")
+plt.plot(epochs, dice_score_history, label="Dice Score")
+plt.xlabel("Epochs")
+plt.ylabel("Loss / Dice Score")
+plt.legend()
+os.makedirs("results", exist_ok=True)
+plt.savefig("results/kvasir_results.png")
+plt.show()
