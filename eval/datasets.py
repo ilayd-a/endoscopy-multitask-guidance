@@ -45,6 +45,10 @@ def load_samples(
             else DEFAULT_SPLIT_ROOT
         )
         return load_kvasir_samples(root, split)
+    if dataset == "split_csv":
+        if dataset_root is None:
+            raise ValueError("--dataset-root is required when --dataset split_csv is used")
+        return load_split_csv_samples(dataset_root, split)
     if dataset == "split_folder":
         root = dataset_root or DEFAULT_SPLIT_ROOT
         return load_split_folder_samples(root, split)

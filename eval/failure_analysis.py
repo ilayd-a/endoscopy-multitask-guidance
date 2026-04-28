@@ -24,8 +24,17 @@ from predictions import (
 
 
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent / "results"
-HIGHER_IS_BETTER = {"dice", "iou", "precision", "recall", "boundary_f1", "pointing_game", "coherence_mer"}
-LOWER_IS_BETTER = {"peak_center_dist", "abs_area_error"}
+HIGHER_IS_BETTER = {
+    "dice",
+    "iou",
+    "precision",
+    "recall",
+    "f2",
+    "boundary_f1",
+    "pointing_game",
+    "coherence_mer",
+}
+LOWER_IS_BETTER = {"mae", "peak_center_dist", "abs_area_error"}
 PATTERN_COLUMNS = (
     "small_region",
     "low_contrast",
@@ -228,7 +237,7 @@ def main() -> None:
         "--dataset",
         type=str,
         default="cvc",
-        choices=["cvc", "kvasir", "split_folder"],
+        choices=["cvc", "kvasir", "split_csv", "split_folder"],
     )
     parser.add_argument("--dataset-root", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)

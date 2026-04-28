@@ -13,6 +13,7 @@ models/*.pth
 *.z01
 *.z02
 data/
+dataset/CVC-ClinicDB/
 sanity_checks/
 output/
 outputs/

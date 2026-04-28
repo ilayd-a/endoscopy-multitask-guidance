@@ -90,6 +90,24 @@ def recall_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
     return float(tp / (tp + fn))
 
 
+def f_beta_score(pred_mask: np.ndarray, gt_mask: np.ndarray, beta: float = 2.0) -> float:
+    precision = precision_score(pred_mask, gt_mask)
+    recall = recall_score(pred_mask, gt_mask)
+    beta_sq = beta**2
+    denominator = beta_sq * precision + recall
+    if denominator == 0.0:
+        return 0.0
+    return float((1.0 + beta_sq) * precision * recall / denominator)
+
+
+def mae_score(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
+    pred = _as_bool_mask(pred_mask).astype(np.float32)
+    gt = _as_bool_mask(gt_mask).astype(np.float32)
+    if pred.size == 0:
+        return 0.0
+    return float(np.abs(pred - gt).mean())
+
+
 def boundary_f1_score(
     pred_mask: np.ndarray,
     gt_mask: np.ndarray,
