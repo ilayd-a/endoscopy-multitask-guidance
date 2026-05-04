@@ -16,11 +16,20 @@ DEFAULT_METRICS = (
     "iou",
     "precision",
     "recall",
+    "f2",
+    "mae",
     "boundary_f1",
     "pointing_game",
     "peak_center_dist",
     "coherence_mer",
 )
+
+
+def finite_or_none(value: object) -> float | None:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(numeric) or not np.isfinite(numeric):
+        return None
+    return float(numeric)
 
 
 def load_summary(path: Path) -> dict[str, dict[str, float]]:
@@ -30,10 +39,14 @@ def load_summary(path: Path) -> dict[str, dict[str, float]]:
 
     frame = pd.read_csv(path)
     if "metric" in frame.columns and {"mean", "std"}.issubset(frame.columns):
-        return {
-            row["metric"]: {"mean": float(row["mean"]), "std": float(row["std"])}
-            for _, row in frame.iterrows()
-        }
+        summary = {}
+        for _, row in frame.iterrows():
+            mean = finite_or_none(row["mean"])
+            std = finite_or_none(row["std"])
+            if mean is None:
+                continue
+            summary[row["metric"]] = {"mean": mean, "std": std or 0.0}
+        return summary
 
     return {
         metric: {
