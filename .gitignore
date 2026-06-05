@@ -1,0 +1,9 @@
+*.zip
+classical_ml/dataset/Kvasir-SEG/
+classical_ml/dataset/data/
+classical_ml/dataset/EndoscopicBladderTissue/
+
+.vscode/
+.idea/
+
+quant_venv
