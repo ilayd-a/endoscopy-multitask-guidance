@@ -8,3 +8,7 @@ pandas
 # Deep Learning (Standard CPU/CUDA agnostic install)
 torch
 torchvision
+
+# models
+monai
+segmentation-models-pytorch
