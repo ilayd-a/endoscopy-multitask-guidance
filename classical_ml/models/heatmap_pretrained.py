@@ -63,7 +63,7 @@ if not val_img_dir.exists():
 all_images = sorted([
     f for f in os.listdir(val_img_dir)
     if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-])[:NUM_SAMPLES]
+])#[:NUM_SAMPLES]
 
 print(f"Generating pretrained outputs for {len(all_images)} validation images...\n")
 

@@ -10,3 +10,4 @@ quant_venv
 
 classical_ml/models/unet_model.pth
 classical_ml/models/unet_pretrained.pth
+classical_ml/output

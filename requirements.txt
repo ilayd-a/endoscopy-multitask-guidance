@@ -12,3 +12,6 @@ torchvision
 # models
 monai
 segmentation-models-pytorch
+
+# eval
+scikit-image

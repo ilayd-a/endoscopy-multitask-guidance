@@ -47,7 +47,7 @@ if not img_dir.exists():
 all_images = sorted([
     f for f in os.listdir(img_dir)
     if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-])[:NUM_SAMPLES]   # take first 20
+])# [:NUM_SAMPLES]   # take first 20
 
 print(f"Generating outputs for {len(all_images)} validation images...\n")
 
