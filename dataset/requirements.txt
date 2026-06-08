@@ -2,8 +2,13 @@
 numpy>=2.0        
 matplotlib
 opencv-python
+pandas
+pillow
+scikit-image
 tqdm
 
 # Deep Learning (Standard CPU/CUDA agnostic install)
 torch
 torchvision
+monai
+segmentation-models-pytorch

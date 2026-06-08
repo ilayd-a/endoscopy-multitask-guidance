@@ -1,6 +1,6 @@
 """
 heatmap_pretrained.py
-Generates pred_mask.png and pred_heatmap.npy for 20 validation images
+Generates pred_mask.png and pred_heatmap.npy for validation or test images
 using UNet with pretrained ResNet34 encoder (val Dice: 0.8893).
 
 Output structure:
@@ -14,12 +14,15 @@ Output structure:
 
 Usage:
     PYTHONPATH=. python3 models/heatmap_pretrained.py
+    PYTHONPATH=. python3 models/heatmap_pretrained.py --split test --num-samples 100
 """
 
+import argparse
 import os
 import torch
 import numpy as np
 import cv2
+from pathlib import Path
 import segmentation_models_pytorch as smp
 from monai.transforms import Compose, LoadImage, EnsureChannelFirst, ScaleIntensity, Resize, ToTensor
 
@@ -28,7 +31,16 @@ from config import MODELS_DIR, DATA_DIR, OUTPUT_DIR, get_device
 device = get_device()
 
 HEATMAP_THRESHOLD = 0.5
-NUM_SAMPLES       = 20
+
+parser = argparse.ArgumentParser(
+    description="Export pretrained UNet masks and heatmaps for evaluation."
+)
+parser.add_argument("--split", choices=["train", "val", "test"], default="val")
+parser.add_argument("--num-samples", type=int, default=20)
+parser.add_argument("--output-dir", default=None)
+args = parser.parse_args()
+
+output_dir = OUTPUT_DIR if args.output_dir is None else Path(args.output_dir)
 
 # ---------------------------------------------------------------------------
 # Load pretrained UNet
@@ -53,19 +65,19 @@ transform = Compose([
 ])
 
 # ---------------------------------------------------------------------------
-# Collect val images
+# Collect split images
 # ---------------------------------------------------------------------------
-val_img_dir = DATA_DIR / "val" / "images"
+val_img_dir = DATA_DIR / args.split / "images"
 
 if not val_img_dir.exists():
-    raise FileNotFoundError(f"Val images not found at {val_img_dir}")
+    raise FileNotFoundError(f"{args.split} images not found at {val_img_dir}")
 
 all_images = sorted([
     f for f in os.listdir(val_img_dir)
     if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-])[:NUM_SAMPLES]
+])[:args.num_samples]
 
-print(f"Generating pretrained outputs for {len(all_images)} validation images...\n")
+print(f"Generating pretrained outputs for {len(all_images)} {args.split} images...\n")
 
 # ---------------------------------------------------------------------------
 # Output goes to output/000_pretrained/, 001_pretrained/, etc.
@@ -84,18 +96,19 @@ for idx, img_name in enumerate(all_images):
         pred_mask    = (prob_map >= HEATMAP_THRESHOLD).astype(np.uint8) * 255
 
         # Folder named NNN_pretrained
-        sample_dir = OUTPUT_DIR / f"{idx:03d}_pretrained"
+        sample_dir = output_dir / f"{idx:03d}_pretrained"
         sample_dir.mkdir(parents=True, exist_ok=True)
 
         cv2.imwrite(str(sample_dir / "pred_mask.png"), pred_mask)
         np.save(str(sample_dir / "pred_heatmap.npy"), pred_heatmap)
+        (sample_dir / "source_image.txt").write_text(img_name, encoding="utf-8")
 
         print(f"[{idx:03d}] {img_name}  ->  {sample_dir.name}/")
 
     except Exception as e:
         print(f"  ERROR on {img_path}: {e}")
 
-print(f"\nDone! Outputs saved to '{OUTPUT_DIR}'")
+print(f"\nDone! Outputs saved to '{output_dir}'")
 print(f"\nModel notes:")
 print(f"  Architecture : UNet + ResNet34 encoder pretrained on ImageNet")
 print(f"  Loss         : Dice Loss + Binary Cross Entropy")
