@@ -20,7 +20,7 @@ TEST_COUNT=100
 
 echo "📥 Downloading Kvasir-SEG dataset..."
 if command -v wget &>/dev/null; then
-    wget -O "$ZIP_FILE" "$DATASET_URL"
+    wget --no-check-certificate -O "$ZIP_FILE" "$DATASET_URL"
 elif command -v curl &>/dev/null; then
     curl -k -L -o "$ZIP_FILE" "$DATASET_URL"
 else

@@ -14,6 +14,7 @@ models/*.pth
 *.z02
 data/
 dataset/CVC-ClinicDB/
+dataset/dataset_a/Kvasir-SEG/
 sanity_checks/
 output/
 outputs/

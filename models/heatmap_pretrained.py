@@ -92,8 +92,12 @@ for idx, img_name in enumerate(all_images):
             output   = model(img_tensor)
             prob_map = torch.sigmoid(output).squeeze().cpu().numpy().astype(np.float32)
 
-        pred_heatmap = prob_map
+        # MONAI's image-only loading path used here matches training, but its
+        # spatial axes are transposed relative to PIL/cv2 image coordinates.
+        # Save outputs in natural image coordinates for eval and visualization.
+        pred_heatmap = prob_map.T
         pred_mask    = (prob_map >= HEATMAP_THRESHOLD).astype(np.uint8) * 255
+        pred_mask    = pred_mask.T
 
         # Folder named NNN_pretrained
         sample_dir = output_dir / f"{idx:03d}_pretrained"

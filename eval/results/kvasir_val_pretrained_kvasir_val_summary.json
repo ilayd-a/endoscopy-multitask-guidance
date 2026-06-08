@@ -1,0 +1,68 @@
+{
+  "dataset": "kvasir",
+  "split": "val",
+  "run_name": "pretrained_kvasir_val",
+  "num_samples": 100,
+  "metrics": {
+    "dice": {
+      "mean": 0.9171,
+      "std": 0.1093,
+      "min": 0.132,
+      "max": 0.9907
+    },
+    "iou": {
+      "mean": 0.8607,
+      "std": 0.1392,
+      "min": 0.0707,
+      "max": 0.9816
+    },
+    "precision": {
+      "mean": 0.9155,
+      "std": 0.126,
+      "min": 0.0831,
+      "max": 0.9991
+    },
+    "recall": {
+      "mean": 0.9316,
+      "std": 0.1094,
+      "min": 0.3208,
+      "max": 0.9982
+    },
+    "f2": {
+      "mean": 0.9241,
+      "std": 0.1084,
+      "min": 0.2041,
+      "max": 0.9911
+    },
+    "mae": {
+      "mean": 0.0287,
+      "std": 0.0434,
+      "min": 0.0015,
+      "max": 0.2572
+    },
+    "boundary_f1": {
+      "mean": 0.6941,
+      "std": 0.1858,
+      "min": 0.1231,
+      "max": 0.9925
+    },
+    "pointing_game": {
+      "mean": 0.99,
+      "std": 0.0995,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "peak_center_dist": {
+      "mean": 29.5749,
+      "std": 21.3771,
+      "min": 3.25,
+      "max": 99.23
+    },
+    "coherence_mer": {
+      "mean": 0.8435,
+      "std": 0.139,
+      "min": 0.0778,
+      "max": 0.9814
+    }
+  }
+}
