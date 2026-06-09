@@ -25,7 +25,7 @@ model = UNet(
     num_res_units=2,
 ).to(device)
 
-model.load_state_dict(torch.load(MODELS_DIR / "unet_model.pth", map_location=device))
+model.load_state_dict(torch.load(MODELS_DIR / "unet_model_improved_1.pth", map_location=device))
 model.eval()
 
 transform = Compose([

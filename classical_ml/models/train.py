@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -169,9 +170,14 @@ model = UNet(
     num_res_units=2,
 ).to(device)
 
-criterion = DiceLoss(sigmoid=True)
+# criterion = DiceLoss(sigmoid=True)
+dice_loss = DiceLoss(sigmoid=True)
+bce_loss = nn.BCEWithLogitsLoss()
+def criterion(outputs, masks):
+    return dice_loss(outputs, masks) + bce_loss(outputs, masks)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+# scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
 num_epochs = 20
 
 
@@ -233,7 +239,7 @@ for epoch in range(num_epochs):
 
     val_loss = val_loss / val_total if val_total > 0 else 0.0
     val_dice = np.mean(dice_scores)
-    scheduler.step()
+    scheduler.step(val_loss)
 
     print(f"Epoch {epoch+1:02d}: Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f} | Val Dice {val_dice:.4f}")
 
@@ -244,7 +250,7 @@ for epoch in range(num_epochs):
     if val_dice > best_val_dice:
         best_val_dice = val_dice
         best_val_loss = val_loss
-        save_path = MODELS_DIR / "unet_model.pth"
+        save_path = MODELS_DIR / "unet_model_improved_1.pth"
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val loss: {val_loss:.4f})")
