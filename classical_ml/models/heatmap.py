@@ -20,12 +20,12 @@ model = UNet(
     spatial_dims=2,
     in_channels=3,
     out_channels=1,
-    channels=(16, 32, 64, 128, 256),
+    channels=(32, 64, 128, 256, 512),    #(16, 32, 64, 128, 256),
     strides=(2, 2, 2, 2),
     num_res_units=2,
 ).to(device)
 
-model.load_state_dict(torch.load(MODELS_DIR / "unet_model_improved_1.pth", map_location=device))
+model.load_state_dict(torch.load(MODELS_DIR / "unet_model_improved_2.pth", map_location=device))
 model.eval()
 
 transform = Compose([
