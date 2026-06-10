@@ -167,7 +167,7 @@ model = UNet(
     out_channels=1,
     channels=(16, 32, 64, 128, 256),
     strides=(2, 2, 2, 2),
-    num_res_units=2,
+    num_res_units=4,        # 2,
 ).to(device)
 
 # criterion = DiceLoss(sigmoid=True)
@@ -250,7 +250,7 @@ for epoch in range(num_epochs):
     if val_dice > best_val_dice:
         best_val_dice = val_dice
         best_val_loss = val_loss
-        save_path = MODELS_DIR / "unet_model_improved_2.pth"
+        save_path = MODELS_DIR / "unet_model_improved_3.pth"
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val loss: {val_loss:.4f})")

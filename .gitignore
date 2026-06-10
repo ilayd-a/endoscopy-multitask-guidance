@@ -12,4 +12,5 @@ classical_ml/models/unet_model.pth
 classical_ml/models/unet_pretrained.pth
 classical_ml/models/unet_model_improved_1.pth
 classical_ml/models/unet_model_improved_2.pth
+classical_ml/models/unet_model_improved_3.pth
 classical_ml/output
