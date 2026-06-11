@@ -10,6 +10,8 @@ quant_venv
 
 classical_ml/models/unet_model.pth
 classical_ml/models/unet_pretrained.pth
+classical_ml/models/unet_pretrained_improved_1.pth
+classical_ml/models/unet_pretrained_improved_2.pth
 classical_ml/models/unet_model_improved_1.pth
 classical_ml/models/unet_model_improved_2.pth
 classical_ml/models/unet_model_improved_3.pth

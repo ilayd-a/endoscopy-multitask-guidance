@@ -80,7 +80,7 @@ train_transforms = Compose([
     EnsureChannelFirstd(keys=["image", "mask"]),
     ScaleIntensityRanged(keys=["image"], a_min=0, a_max=255, b_min=0.0, b_max=1.0, clip=True),
     ScaleIntensityRanged(keys=["mask"],  a_min=0, a_max=255, b_min=0.0, b_max=1.0, clip=True),
-    Resized(keys=["image", "mask"], spatial_size=(256, 256)),
+    Resized(keys=["image", "mask"], spatial_size=(320, 320)),                                   # (256, 256)),
     RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     RandRotated(keys=["image", "mask"], range_x=15, prob=0.5),
@@ -95,7 +95,7 @@ val_transforms = Compose([
     EnsureChannelFirstd(keys=["image", "mask"]),
     ScaleIntensityRanged(keys=["image"], a_min=0, a_max=255, b_min=0.0, b_max=1.0, clip=True),
     ScaleIntensityRanged(keys=["mask"],  a_min=0, a_max=255, b_min=0.0, b_max=1.0, clip=True),
-    Resized(keys=["image", "mask"], spatial_size=(256, 256)),
+    Resized(keys=["image", "mask"], spatial_size=(320, 320)),                               # (256, 256)),
     ToTensord(keys=["image", "mask"])
 ])
 
@@ -121,7 +121,7 @@ device = get_device()
 print(f"Using device: {device}")
 
 model = smp.Unet(
-    encoder_name="resnet34",
+    encoder_name="efficientnet-b4",           # "resnet34",
     encoder_weights="imagenet",
     in_channels=3,
     classes=1,
@@ -138,7 +138,7 @@ def criterion(outputs, masks):
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5)
-num_epochs = 20
+num_epochs = 50     # 20
 
 # ---------------------------------------------------------------------------
 # Training loop — tracks Dice score as well as loss
@@ -205,7 +205,7 @@ for epoch in range(num_epochs):
 
     if val_dice > best_val_dice:
         best_val_dice = val_dice
-        save_path = MODELS_DIR / "unet_pretrained.pth"
+        save_path = MODELS_DIR / "unet_pretrained_improved_2.pth"
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_path)
         print(f"  ✅ Best model saved → {save_path}  (val dice: {val_dice:.4f})")
@@ -217,7 +217,7 @@ print(f"  Architecture : UNet with ResNet34 encoder pretrained on ImageNet")
 print(f"  Loss         : Dice Loss + Binary Cross Entropy")
 print(f"  Optimiser    : Adam (lr=1e-4) with ReduceLROnPlateau scheduler")
 print(f"  Dataset      : Kvasir-SEG, 800 train / 100 val / 100 test")
-print(f"  Input size   : 256x256")
+print(f"  Input size   : 320x320")
 
 plt.plot(epochs, train_loss_history, label="Train Loss")
 plt.plot(epochs, val_loss_history, label="Validation Loss")
