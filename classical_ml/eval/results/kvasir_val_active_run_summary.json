@@ -1,0 +1,68 @@
+{
+  "dataset": "kvasir",
+  "split": "val",
+  "run_name": "active_run",
+  "num_samples": 100,
+  "metrics": {
+    "dice": {
+      "mean": 0.2869,
+      "std": 0.1817,
+      "min": 0.0,
+      "max": 0.6841
+    },
+    "iou": {
+      "mean": 0.1812,
+      "std": 0.13,
+      "min": 0.0,
+      "max": 0.5199
+    },
+    "precision": {
+      "mean": 0.3559,
+      "std": 0.2612,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "recall": {
+      "mean": 0.3119,
+      "std": 0.2347,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "f2": {
+      "mean": 0.2886,
+      "std": 0.1947,
+      "min": 0.0,
+      "max": 0.8407
+    },
+    "mae": {
+      "mean": 0.2257,
+      "std": 0.1077,
+      "min": 0.0549,
+      "max": 0.6438
+    },
+    "boundary_f1": {
+      "mean": 0.0441,
+      "std": 0.0358,
+      "min": 0.0,
+      "max": 0.168
+    },
+    "pointing_game": {
+      "mean": 0.38,
+      "std": 0.4854,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "peak_center_dist": {
+      "mean": 65.6603,
+      "std": 32.5499,
+      "min": 8.9,
+      "max": 162.58
+    },
+    "coherence_mer": {
+      "mean": 0.3269,
+      "std": 0.2263,
+      "min": 0.0006,
+      "max": 0.9381
+    }
+  }
+}
