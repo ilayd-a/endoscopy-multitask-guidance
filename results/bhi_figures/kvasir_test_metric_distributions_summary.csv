@@ -1,0 +1,9 @@
+group,metric,count,mean,std,median,min,max
+Kvasir-test,dice,100,0.8668,0.1912,0.9431,0.0,0.9864
+Kvasir-test,iou,100,0.8016,0.2209,0.8923,0.0,0.9731
+Kvasir-test,precision,100,0.8711,0.1915,0.9489,0.0,1.0
+Kvasir-test,recall,100,0.9091,0.1847,0.9681,0.0,1.0
+Kvasir-test,f2,100,0.8848,0.1837,0.955,0.0,0.9898
+Kvasir-test,boundary_f1,100,0.6339,0.2179,0.644,0.0,1.0
+Kvasir-test,pointing_game,100,0.98,0.14,1.0,0.0,1.0
+Kvasir-test,peak_center_dist,100,28.2544,22.3627,21.11,1.0,103.73

@@ -15,6 +15,10 @@ models/*.pth
 data/
 dataset/CVC-ClinicDB/
 dataset/dataset_a/Kvasir-SEG/
+dataset/dataset_b/PNG/
+dataset/dataset_b/TIF/
+dataset/dataset_b/class_dict.csv
+dataset/dataset_b/metadata.csv
 sanity_checks/
 output/
 outputs/

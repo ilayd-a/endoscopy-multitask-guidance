@@ -1,0 +1,68 @@
+{
+  "dataset": "cvc",
+  "split": "test",
+  "run_name": "kvasir_to_cvc",
+  "num_samples": 612,
+  "metrics": {
+    "dice": {
+      "mean": 0.7889,
+      "std": 0.2464,
+      "min": 0.0,
+      "max": 0.9887
+    },
+    "iou": {
+      "mean": 0.7041,
+      "std": 0.2633,
+      "min": 0.0,
+      "max": 0.9777
+    },
+    "precision": {
+      "mean": 0.7949,
+      "std": 0.2596,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "recall": {
+      "mean": 0.853,
+      "std": 0.2458,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "f2": {
+      "mean": 0.8147,
+      "std": 0.2395,
+      "min": 0.0,
+      "max": 0.9868
+    },
+    "mae": {
+      "mean": 0.0359,
+      "std": 0.05,
+      "min": 0.0012,
+      "max": 0.4358
+    },
+    "boundary_f1": {
+      "mean": 0.548,
+      "std": 0.2449,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "pointing_game": {
+      "mean": 0.9624,
+      "std": 0.1902,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "peak_center_dist": {
+      "mean": 28.1876,
+      "std": 27.712,
+      "min": 0.19,
+      "max": 248.42
+    },
+    "coherence_mer": {
+      "mean": 0.7084,
+      "std": 0.2327,
+      "min": 0.0056,
+      "max": 0.983
+    }
+  }
+}

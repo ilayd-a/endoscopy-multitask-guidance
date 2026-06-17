@@ -38,6 +38,12 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--split", choices=["train", "val", "test"], default="val")
 parser.add_argument("--num-samples", type=int, default=20)
 parser.add_argument("--output-dir", default=None)
+parser.add_argument(
+    "--image-dir",
+    type=Path,
+    default=None,
+    help="Optional image folder override for external/domain-shift datasets.",
+)
 args = parser.parse_args()
 
 output_dir = OUTPUT_DIR if args.output_dir is None else Path(args.output_dir)
@@ -67,17 +73,17 @@ transform = Compose([
 # ---------------------------------------------------------------------------
 # Collect split images
 # ---------------------------------------------------------------------------
-val_img_dir = DATA_DIR / args.split / "images"
+val_img_dir = args.image_dir if args.image_dir is not None else DATA_DIR / args.split / "images"
 
 if not val_img_dir.exists():
-    raise FileNotFoundError(f"{args.split} images not found at {val_img_dir}")
+    raise FileNotFoundError(f"Images not found at {val_img_dir}")
 
 all_images = sorted([
     f for f in os.listdir(val_img_dir)
     if f.lower().endswith(('.png', '.jpg', '.jpeg'))
 ])[:args.num_samples]
 
-print(f"Generating pretrained outputs for {len(all_images)} {args.split} images...\n")
+print(f"Generating pretrained outputs for {len(all_images)} images from {val_img_dir}...\n")
 
 # ---------------------------------------------------------------------------
 # Output goes to output/000_pretrained/, 001_pretrained/, etc.

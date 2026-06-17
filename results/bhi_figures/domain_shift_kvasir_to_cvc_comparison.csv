@@ -1,0 +1,15 @@
+run,metric,mean,std
+Kvasir-test,dice,0.8668,0.1912
+Kvasir-test,iou,0.8016,0.2209
+Kvasir-test,precision,0.8711,0.1915
+Kvasir-test,recall,0.9091,0.1847
+Kvasir-test,f2,0.8848,0.1837
+Kvasir-test,boundary_f1,0.6339,0.2179
+Kvasir-test,pointing_game,0.98,0.14
+CVC-external,dice,0.7889,0.2464
+CVC-external,iou,0.7041,0.2633
+CVC-external,precision,0.7949,0.2596
+CVC-external,recall,0.853,0.2458
+CVC-external,f2,0.8147,0.2395
+CVC-external,boundary_f1,0.548,0.2449
+CVC-external,pointing_game,0.9624,0.1902
