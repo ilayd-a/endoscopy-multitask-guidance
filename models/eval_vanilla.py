@@ -1,9 +1,8 @@
 
 from pathlib import Path
-import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
 from monai.networks.nets import UNet
+from torch.utils.data import Dataset, DataLoader
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd,
     ScaleIntensityRanged, Resized, ToTensord,
@@ -12,31 +11,30 @@ from monai.transforms import (
 from config import DATA_DIR, MODELS_DIR, get_device
 from model_metrics import MetricTracker
 
-CVC_DIR  = DATA_DIR.parent / "CVC-ClinicDB"
-IMG_DIR  = CVC_DIR / "PNG" / "Original"
-MASK_DIR = CVC_DIR / "PNG" / "Ground Truth"
-META     = CVC_DIR / "metadata.csv"
 
 class Dataset(Dataset):
-    def __init__(self, image_names, transform):
-        self.image_names = image_names
+    def __init__(self, root_dir, split, transform):
+        self.img_dir = Path(root_dir) / split / "images"
+        self.mask_dir = Path(root_dir) / split / "masks"
         self.transform = transform
+        if not self.img_dir.exists():
+            raise FileNotFoundError(f"Split '{split}' not found in {root_dir}")
+        self.images = sorted(f.name for f in self.img_dir.iterdir() if f.name != ".DS_Store")
 
     def __len__(self):
-        return len(self.image_names)
+        return len(self.images)
 
     def __getitem__(self, idx):
-        name = self.image_names[idx]
+        name = self.images[idx]
         data = self.transform({
-            "image": str(IMG_DIR / name),
-            "mask": str(MASK_DIR / name),
+            "image": str(self.img_dir / name),
+            "mask": str(self.mask_dir / name),
         })
-        image = data["image"].float()
-        mask = data["mask"].float()
-        if mask.shape[0] > 1:
-            mask = mask[:1]
+        mask = data["mask"]
+        if mask.shape[0] == 3:
+            mask = mask.mean(dim=0, keepdim=True)
         mask = (mask > 0.5).float()
-        return image, mask
+        return data["image"], mask
 
 
 eval_transforms = Compose([
@@ -48,15 +46,13 @@ eval_transforms = Compose([
     ToTensord(keys=["image", "mask"]),
 ])
 
-df = pd.read_csv(META)
-test_imgs = df[df.sequence_id >= 27]["png_image_path"].apply(lambda x: Path(x).name).tolist()
-print(f"Test set: {len(test_imgs)} images")
-
 device = get_device()
 print(f"Using device: {device}")
 
-test_ds = Dataset(test_imgs, transform=eval_transforms)
+test_ds = Dataset(root_dir=DATA_DIR, split="test", transform=eval_transforms)
 test_loader = DataLoader(test_ds, batch_size=8, shuffle=False, num_workers=0)
+print(f"Test set: {len(test_ds)} images")
+
 
 model = UNet(
     spatial_dims=2,
