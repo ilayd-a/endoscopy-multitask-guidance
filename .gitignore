@@ -23,3 +23,7 @@ sanity_checks/
 output/
 outputs/
 venv/
+results/bhi_multiseed/run.log
+results/bhi_multiseed/run.pid
+results/bhi_multiseed_smoke*/
+results/bhi_multiseed_mps_smoke/

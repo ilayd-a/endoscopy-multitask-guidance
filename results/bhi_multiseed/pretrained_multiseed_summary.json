@@ -1,0 +1,57 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "epochs": 20,
+  "batch_size": 8,
+  "lr": 0.0001,
+  "summary": [
+    {
+      "dataset": "Kvasir test",
+      "seeds": 10,
+      "n_per_seed": 100,
+      "dice_mean": 0.8543,
+      "dice_sd": 0.0147,
+      "iou_mean": 0.7838,
+      "iou_sd": 0.0174,
+      "precision_mean": 0.883,
+      "precision_sd": 0.0185,
+      "recall_mean": 0.8717,
+      "recall_sd": 0.0153,
+      "f2_mean": 0.8602,
+      "f2_sd": 0.0134,
+      "pointing_game_mean": 0.978,
+      "pointing_game_sd": 0.0063,
+      "peak_center_dist_mean": 40.2948,
+      "peak_center_dist_sd": 4.1677
+    },
+    {
+      "dataset": "CVC external",
+      "seeds": 10,
+      "n_per_seed": 612,
+      "dice_mean": 0.7462,
+      "dice_sd": 0.0326,
+      "iou_mean": 0.6635,
+      "iou_sd": 0.0319,
+      "precision_mean": 0.7891,
+      "precision_sd": 0.0303,
+      "recall_mean": 0.7817,
+      "recall_sd": 0.0433,
+      "f2_mean": 0.7591,
+      "f2_sd": 0.0369,
+      "pointing_game_mean": 0.9232,
+      "pointing_game_sd": 0.0217,
+      "peak_center_dist_mean": 39.9351,
+      "peak_center_dist_sd": 5.5626
+    }
+  ]
+}

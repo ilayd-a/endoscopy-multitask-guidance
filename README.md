@@ -81,6 +81,28 @@ The main preliminary finding is that segmentation quality decreases under
 external CVC evaluation, while coarse localization remains comparatively stable.
 These are single-run results and should be treated as a preliminary baseline.
 
+## Multi-Seed Pretrained Results
+
+The pretrained U-Net experiment was repeated across 10 random seeds. The table
+reports mean +/- SD across seed-level test metrics. Each seed used the fixed
+Kvasir train/val/test split and the best validation checkpoint from 20 epochs.
+
+| Model | Test set | Seeds | Dice | IoU | Precision | Recall | F2 | PG | PCD (px) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Pretrained U-Net | Kvasir | 10 | 0.8543 +/- 0.0147 | 0.7838 +/- 0.0174 | 0.8830 +/- 0.0185 | 0.8717 +/- 0.0153 | 0.8602 +/- 0.0134 | 0.9780 +/- 0.0063 | 40.2948 +/- 4.1677 |
+| Pretrained U-Net | CVC external | 10 | 0.7462 +/- 0.0326 | 0.6635 +/- 0.0319 | 0.7891 +/- 0.0303 | 0.7817 +/- 0.0433 | 0.7591 +/- 0.0369 | 0.9232 +/- 0.0217 | 39.9351 +/- 5.5626 |
+
+Run the repeated evaluation with:
+
+```bash
+PYTHONPATH=. python3 -u models/run_pretrained_multiseed.py \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --epochs 20 \
+  --batch-size 8 \
+  --output-dir results/bhi_multiseed \
+  --resume
+```
+
 ## Repository Structure
 
 ```text
@@ -181,11 +203,14 @@ results/bhi_figures/domain_shift_compact_metrics.png
 results/bhi_figures/kvasir_test_pretrained_kvasir_test_median_dice_panel.png
 results/bhi_figures/cvc_test_kvasir_to_cvc_median_dice_panel.png
 results/bhi_figures/center_baseline_localization.csv
+results/bhi_multiseed/pretrained_multiseed_summary.csv
+results/bhi_multiseed/pretrained_multiseed_per_seed.csv
 ```
 
 ## Limitations
 
-- Results are currently single-run.
+- Vanilla U-Net results are currently single-run.
+- The multi-seed results currently cover the pretrained U-Net only.
 - The vanilla U-Net baseline should be strengthened or retrained for a more
   rigorous full-paper comparison.
 - Reverse domain shift (CVC to Kvasir) has not yet been evaluated.
