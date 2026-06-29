@@ -23,3 +23,7 @@ classical_ml/output
 kidney_stone/
 qml_kidney_stone/
 
+EndoscopicBladderTissue/dataset/
+EndoscopicBladderTissue/__pycache__/
+EndoscopicBladderTissue/anaconda_projects/
+EndoscopicBladderTissue/.ipynb_checkpoints/
