@@ -52,15 +52,6 @@ quantum-medical-research/
     └── notes/                    # Weekly research notes
 ```
 
-## Tech Stack
-
-| Area | Tools |
-|------|-------|
-| Quantum Framework | Qiskit, Qiskit Machine Learning |
-| Classical ML | PyTorch, scikit-learn |
-| Medical Imaging | SimpleITK, nibabel, pydicom |
-| Data | TCIA, MedMNIST |
-
 ## Getting Started
 
 ```bash
