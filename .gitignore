@@ -21,7 +21,10 @@ classical_ml/output
 .DS_Store
 *.zip
 kidney_stone/
-qml_kidney_stone/
+qml_kidney_stone/images/
+qml_kidney_stone/training_data/*.jpg
+qml_kidney_stone/results/*.png
+qml_kidney_stone/__pycache__/
 
 EndoscopicBladderTissue/dataset/
 EndoscopicBladderTissue/__pycache__/
