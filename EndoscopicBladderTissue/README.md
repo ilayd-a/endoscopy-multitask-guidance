@@ -1,3 +1,80 @@
+# QML Endoscopy - EBTC Publication Benchmark
+
+This folder now contains a leakage-controlled benchmark path for the
+Endoscopic Bladder Tissue Classification (EBTC) dataset, intended for
+SPIE-style abstract/manuscript preparation.
+
+## Publication-Grade EBTC Workflow
+
+Use `experiments/publication_benchmark_ebtc.py` for results that are suitable
+for reporting. It fixes the main evaluation risks in the exploratory scripts:
+
+- train/test split happens before model preprocessing decisions
+- `StandardScaler`, `PCA`, and `MinMaxScaler` are fit on the training split only
+- optional class balancing is applied to the training split only
+- classical baselines are evaluated on the same low-dimensional feature space
+- outputs include CSV metrics, JSON metadata with split/sample IDs, and an
+  optional comparison figure
+
+### Smoke Test
+
+```bash
+python experiments/publication_benchmark_ebtc.py \
+  --synthetic \
+  --models classical \
+  --fast \
+  --no_plot
+```
+
+### Real EBTC Run
+
+Expected data layout:
+
+```text
+data/EBTC/
+  HGC/*.png
+  LGC/*.png
+  NST/*.png
+  NTL/*.png
+```
+
+Run classical baselines plus the 4-qubit and 6-qubit QSVM variants:
+
+```bash
+python experiments/publication_benchmark_ebtc.py \
+  --data_dir data/EBTC \
+  --models classical qsvm_v1 qsvm_v2 \
+  --max_samples 300 \
+  --max_train_samples 120 \
+  --max_test_samples 80
+```
+
+For faster early checks:
+
+```bash
+python experiments/publication_benchmark_ebtc.py \
+  --data_dir data/EBTC \
+  --models classical \
+  --fast \
+  --no_plot
+```
+
+Outputs are written to:
+
+- `results/publication_benchmark/ebtc_publication_metrics.csv`
+- `results/publication_benchmark/ebtc_publication_metadata.json`
+- `results/publication_benchmark/ebtc_publication_comparison.png`
+
+If Qiskit is not installed in the active Python environment, the script records
+the missing dependency in the metrics CSV instead of failing the whole run.
+Use the team's `qml_endo` environment, or install:
+
+```bash
+pip install qiskit qiskit-machine-learning qiskit-aer
+```
+
+## Legacy Exploratory Notes
+
 # QML Endoscopy — Kvasir-SEG Benchmark
 
 Quantum Machine Learning による内視鏡画像（ポリープ）分類の比較実験フレームワーク。

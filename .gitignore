@@ -19,6 +19,8 @@ classical_ml/models/unet_model_improved_3.pth
 classical_ml/output
 
 .DS_Store
+__pycache__/
+**/__pycache__/
 *.zip
 kidney_stone/
 qml_kidney_stone/images/
@@ -27,6 +29,7 @@ qml_kidney_stone/results/*.png
 qml_kidney_stone/__pycache__/
 
 EndoscopicBladderTissue/dataset/
+EndoscopicBladderTissue/results/publication_benchmark/
 EndoscopicBladderTissue/__pycache__/
 EndoscopicBladderTissue/anaconda_projects/
 EndoscopicBladderTissue/.ipynb_checkpoints/

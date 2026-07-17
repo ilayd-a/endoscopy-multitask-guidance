@@ -52,6 +52,35 @@ BINARY_MAP = {
 CLASS_NAMES = {0: "non-cancer (NST+NTL)", 1: "cancer (HGC+LGC)"}
 
 
+def list_ebtc_samples(data_dir: str) -> tuple[list[Path], np.ndarray]:
+    """
+    Return EBTC image paths and binary labels without loading image features.
+
+    This is useful for publication-grade evaluation, where train/test splitting
+    must happen before any feature extraction, class balancing, PCA, or scaling.
+    """
+    data_dir = Path(data_dir)
+    paths: list[Path] = []
+    labels: list[int] = []
+
+    for class_name, label in BINARY_MAP.items():
+        class_dir = data_dir / class_name
+        if not class_dir.exists():
+            raise FileNotFoundError(
+                f"Expected directory not found: {class_dir}\n"
+                "Please place the EBTC dataset at data/EBTC/ with subdirs "
+                "HGC/, LGC/, NST/, NTL/."
+            )
+        for path in sorted(class_dir.glob("*.png")):
+            paths.append(path)
+            labels.append(label)
+
+    if not paths:
+        raise FileNotFoundError(f"No PNG images found under {data_dir}")
+
+    return paths, np.asarray(labels, dtype=int)
+
+
 # ─────────────────────────────────────────────────────────
 # Dataset
 # ─────────────────────────────────────────────────────────
@@ -112,6 +141,41 @@ def _build_extractor(device: torch.device) -> nn.Module:
     extractor = nn.Sequential(*list(resnet.children())[:-1])   # drop FC → 512-dim
     extractor.eval().to(device)
     return extractor
+
+
+def extract_resnet18_features_from_paths(
+    image_paths: list[Path] | list[str],
+    batch_size: int = 32,
+    img_size: int = 224,
+) -> np.ndarray:
+    """
+    Extract frozen ImageNet ResNet-18 features for an explicit list of images.
+
+    The function only performs CNN feature extraction. Downstream preprocessing
+    such as StandardScaler, PCA, MinMaxScaler, and class balancing should be fit
+    on the training split only.
+    """
+    from PIL import Image
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    extractor = _build_extractor(device)
+    transform = T.Compose([
+        T.Resize((img_size, img_size)),
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                    std =[0.229, 0.224, 0.225]),
+    ])
+
+    feats = []
+    image_paths = [Path(p) for p in image_paths]
+    with torch.no_grad():
+        for start in range(0, len(image_paths), batch_size):
+            batch_paths = image_paths[start:start + batch_size]
+            imgs = [transform(Image.open(p).convert("RGB")) for p in batch_paths]
+            out = extractor(torch.stack(imgs).to(device)).squeeze(-1).squeeze(-1)
+            feats.append(out.cpu().numpy())
+
+    return np.concatenate(feats, axis=0)
 
 
 # ─────────────────────────────────────────────────────────
