@@ -181,7 +181,7 @@ python3 endoscopy_guidance/candidate_ranking_benchmark.py \
   --sample_folds 5
 ```
 
-Held-out CVC candidate-ranking result:
+Held-out CVC candidate-ranking result without RGB patch features:
 
 | Model | AUC | Balanced accuracy | F1 | Top-1 hit | Top-3 hit | Best positive rank |
 |---|---:|---:|---:|---:|---:|---:|
@@ -201,6 +201,60 @@ Interpretation:
   but lower top-1/top-3 localization than random forest.
 - This is now a viable SPIE-style result if framed carefully as quantum-kernel candidate
   reranking under domain shift, not as broad quantum superiority.
+
+## RGB Patch Feature Upgrade
+
+The exporter can also save resized RGB frames:
+
+```bash
+MPLCONFIGDIR=/private/tmp/mplconfig XDG_CACHE_HOME=/private/tmp/xdgcache \
+python3 endoscopy_guidance/export_cvc_predictions.py \
+  --split test \
+  --output_dir endoscopy_guidance/exports/cvc_test_rgb \
+  --device cpu \
+  --save_images
+```
+
+The candidate benchmark can then include local RGB statistics, patch contrast, and simple
+gradient-texture descriptors:
+
+```bash
+python3 endoscopy_guidance/candidate_ranking_benchmark.py \
+  --data_dir endoscopy_guidance/exports/cvc_test_rgb \
+  --results_csv endoscopy_guidance/results/cvc_test_rgb_candidate_ranking_metrics.csv \
+  --aggregate_csv endoscopy_guidance/results/cvc_test_rgb_candidate_ranking_aggregate.csv \
+  --candidates_csv endoscopy_guidance/results/cvc_test_rgb_candidate_table.csv \
+  --top_n 8 \
+  --grid_stride 48 \
+  --nms_dist 20 \
+  --patch_radius 14 \
+  --sample_folds 5 \
+  --image_features
+```
+
+Held-out CVC result with RGB patch features:
+
+| Model | AUC | Balanced accuracy | F1 | Top-1 hit | Top-3 hit | Top-5 hit | Best positive rank |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Heatmap score baseline | 0.640 | NA | NA | 0.135 | 0.212 | 0.256 | 11.655 |
+| ExtraTrees | 0.902 | 0.558 | 0.200 | 0.437 | 0.590 | 0.652 | 2.517 |
+| HistGradientBoosting | 0.871 | 0.653 | 0.364 | 0.379 | 0.529 | 0.651 | 3.107 |
+| RBF SVM | 0.888 | 0.811 | 0.332 | 0.288 | 0.469 | 0.560 | 3.236 |
+| Random forest | 0.891 | 0.534 | 0.123 | 0.424 | 0.592 | 0.637 | 2.560 |
+| Balanced PQK, reps 2, C=1 | 0.898 | 0.822 | 0.377 | 0.318 | 0.545 | 0.682 | 2.647 |
+| Balanced PQK, reps 3, C=10 | 0.882 | 0.753 | 0.407 | 0.364 | 0.546 | 0.697 | 2.565 |
+| Balanced PQK, reps 3, C=1 | 0.895 | 0.818 | 0.402 | 0.319 | 0.591 | 0.621 | 2.854 |
+
+Interpretation:
+
+- RGB patch features make the reranking task much stronger across both classical and PQK models.
+- ExtraTrees has the highest AUC and top-1 localization.
+- Random forest and balanced PQK are essentially tied on top-3 localization.
+- Balanced PQK gives the strongest F1 and top-5 hit among the tested models, while preserving
+  high balanced accuracy.
+- This is the most promising version for the SPIE abstract: it supports a careful claim that a
+  projected quantum-kernel reranker is competitive with strong classical rerankers and improves
+  clinically relevant top-k target recovery over the degraded heatmap baseline.
 
 ## Go/No-Go Criteria
 

@@ -144,6 +144,11 @@ def export_predictions(args):
         np.save(out_dir / f"gt_mask_{sid}.npy", gt)
         np.save(out_dir / f"pred_mask_{sid}.npy", pred)
         np.save(out_dir / f"pred_heatmap_{sid}.npy", heatmap)
+        if args.save_images:
+            image = cv2.imread(str(img_dir / name), cv2.IMREAD_COLOR)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = cv2.resize(image, INPUT_SIZE, interpolation=cv2.INTER_LINEAR)
+            np.save(out_dir / f"image_{sid}.npy", image.astype(np.uint8))
         row = {
             "sample_id": sid,
             "source_file": name,
@@ -202,6 +207,7 @@ def main():
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--save_images", action="store_true", help="Also export resized RGB frames as image_*.npy")
     args = parser.parse_args()
     export_predictions(args)
 

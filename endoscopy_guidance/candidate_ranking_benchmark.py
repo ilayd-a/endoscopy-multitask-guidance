@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -90,6 +90,42 @@ def local_stats(values: np.ndarray) -> list[float]:
     ]
 
 
+def image_patch_features(image: np.ndarray | None, y: int, x: int, radius: int) -> list[float]:
+    if image is None:
+        return []
+
+    image_float = image.astype(float) / 255.0
+    rgb_patch = patch(image_float, y, x, radius)
+    if rgb_patch.size == 0:
+        return [0.0] * 30
+
+    features = []
+    whole_mean = image_float.reshape(-1, image_float.shape[-1]).mean(axis=0)
+    whole_std = image_float.reshape(-1, image_float.shape[-1]).std(axis=0)
+    patch_pixels = rgb_patch.reshape(-1, rgb_patch.shape[-1])
+    patch_mean = patch_pixels.mean(axis=0)
+    patch_std = patch_pixels.std(axis=0)
+    patch_min = patch_pixels.min(axis=0)
+    patch_max = patch_pixels.max(axis=0)
+    features.extend(patch_mean.tolist())
+    features.extend(patch_std.tolist())
+    features.extend(patch_min.tolist())
+    features.extend(patch_max.tolist())
+    features.extend((patch_mean - whole_mean).tolist())
+    features.extend((patch_std - whole_std).tolist())
+
+    gray = (
+        0.2989 * rgb_patch[..., 0]
+        + 0.5870 * rgb_patch[..., 1]
+        + 0.1140 * rgb_patch[..., 2]
+    )
+    gy, gx = np.gradient(gray)
+    grad_mag = np.hypot(gy, gx)
+    features.extend(local_stats(gray))
+    features.extend(local_stats(grad_mag))
+    return [float(v) for v in features]
+
+
 def nms_top_points(heatmap: np.ndarray, top_n: int, min_dist: int) -> list[tuple[int, int]]:
     order = np.argsort(heatmap.ravel())[::-1]
     selected: list[tuple[int, int]] = []
@@ -115,7 +151,9 @@ def candidate_features(
     heatmap: np.ndarray,
     pred_mask: np.ndarray,
     gt_mask: np.ndarray,
+    image: np.ndarray | None,
     radius: int,
+    use_image_features: bool,
 ) -> tuple[list[float], dict]:
     h, w = heatmap.shape
     hm_patch = patch(heatmap, y, x, radius)
@@ -137,6 +175,8 @@ def candidate_features(
     ]
     features.extend(local_stats(hm_patch))
     features.extend(local_stats(pm_patch))
+    if use_image_features:
+        features.extend(image_patch_features(image, y, x, radius))
 
     label = int(gt_mask[y, x] > 0)
     center_dist = float(np.hypot(y - cy, x - cx)) if not math.isnan(cy) else float("nan")
@@ -148,7 +188,14 @@ def candidate_features(
     return features, meta
 
 
-def build_candidates(data_dir: Path, top_n: int, grid_stride: int, nms_dist: int, radius: int):
+def build_candidates(
+    data_dir: Path,
+    top_n: int,
+    grid_stride: int,
+    nms_dist: int,
+    radius: int,
+    use_image_features: bool,
+):
     rows = []
     features = []
     labels = []
@@ -160,6 +207,8 @@ def build_candidates(data_dir: Path, top_n: int, grid_stride: int, nms_dist: int
         gt = np.load(data_dir / f"gt_mask_{sid}.npy")
         pred = np.load(data_dir / f"pred_mask_{sid}.npy")
         heatmap = np.load(data_dir / f"pred_heatmap_{sid}.npy")
+        image_path = data_dir / f"image_{sid}.npy"
+        image = np.load(image_path) if use_image_features and image_path.exists() else None
         points = nms_top_points(heatmap, top_n=top_n, min_dist=nms_dist)
         points.extend(grid_points(heatmap.shape, stride=grid_stride))
 
@@ -168,7 +217,16 @@ def build_candidates(data_dir: Path, top_n: int, grid_stride: int, nms_dist: int
             if (y, x) in seen:
                 continue
             seen.add((y, x))
-            feat, meta = candidate_features(y, x, heatmap, pred, gt, radius=radius)
+            feat, meta = candidate_features(
+                y,
+                x,
+                heatmap,
+                pred,
+                gt,
+                image=image,
+                radius=radius,
+                use_image_features=use_image_features,
+            )
             features.append(feat)
             labels.append(meta["label"])
             rows.append({
@@ -211,12 +269,14 @@ def rank_metrics(test_rows: list[dict], scores: np.ndarray, prefix: str) -> dict
 
     top1_hits = []
     top3_hits = []
+    top5_hits = []
     top1_distances = []
     positive_ranks = []
     for sample_rows in by_sample.values():
         ranked = sorted(sample_rows, key=lambda item: item[1], reverse=True)
         top1_hits.append(int(ranked[0][0]["label"] > 0))
         top3_hits.append(int(any(row["label"] > 0 for row, _ in ranked[:3])))
+        top5_hits.append(int(any(row["label"] > 0 for row, _ in ranked[:5])))
         top1_distances.append(float(ranked[0][0]["center_dist"]))
         ranks = [idx + 1 for idx, (row, _) in enumerate(ranked) if row["label"] > 0]
         positive_ranks.append(float(min(ranks)) if ranks else float("nan"))
@@ -224,6 +284,7 @@ def rank_metrics(test_rows: list[dict], scores: np.ndarray, prefix: str) -> dict
     return {
         f"{prefix}_top1_hit": float(np.mean(top1_hits)),
         f"{prefix}_top3_hit": float(np.mean(top3_hits)),
+        f"{prefix}_top5_hit": float(np.mean(top5_hits)),
         f"{prefix}_top1_center_dist": float(np.nanmean(top1_distances)),
         f"{prefix}_best_positive_rank": float(np.nanmean(positive_ranks)),
     }
@@ -255,6 +316,14 @@ def models(seed: int):
         "Classical_LinearSVM_C1": SVC(C=1.0, kernel="linear", probability=True, class_weight="balanced", random_state=seed),
         "Classical_RBFSVM_C1_gammaScale": SVC(C=1.0, kernel="rbf", gamma="scale", probability=True, class_weight="balanced", random_state=seed),
         "Classical_RandomForest": RandomForestClassifier(n_estimators=300, class_weight="balanced", random_state=seed),
+        "Classical_ExtraTrees": ExtraTreesClassifier(n_estimators=500, class_weight="balanced", random_state=seed),
+        "Classical_HistGradientBoosting": HistGradientBoostingClassifier(
+            max_iter=250,
+            learning_rate=0.05,
+            l2_regularization=0.1,
+            class_weight="balanced",
+            random_state=seed,
+        ),
         "QML_PQK_reps1_C1_balanced": ProjectedQuantumKernelSVC(
             gamma="scale", reps=1, C=1.0, class_weight="balanced"
         ),
@@ -298,6 +367,7 @@ def aggregate_metric_rows(rows: list[dict]) -> list[dict]:
         "candidate_roc_auc",
         "model_top1_hit",
         "model_top3_hit",
+        "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
         "train_time_sec",
@@ -344,6 +414,11 @@ def main():
     parser.add_argument("--patch_radius", type=int, default=12)
     parser.add_argument("--n_components", type=int, default=6)
     parser.add_argument(
+        "--image_features",
+        action="store_true",
+        help="Use image_*.npy RGB patch features when exported frames are available.",
+    )
+    parser.add_argument(
         "--sample_folds",
         type=int,
         default=0,
@@ -358,6 +433,7 @@ def main():
         grid_stride=args.grid_stride,
         nms_dist=args.nms_dist,
         radius=args.patch_radius,
+        use_image_features=args.image_features,
     )
     sample_ids = np.asarray([row["sample_id"] for row in candidate_rows])
     print(
@@ -421,6 +497,7 @@ def main():
         "candidate_roc_auc",
         "model_top1_hit",
         "model_top3_hit",
+        "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
         "train_time_sec",
@@ -446,6 +523,7 @@ def main():
         "candidate_roc_auc",
         "model_top1_hit",
         "model_top3_hit",
+        "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
         "train_time_sec",
