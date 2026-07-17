@@ -426,3 +426,82 @@ than asking PQK to replace the best classical reranker:
 This direction fits MI104 better because it matches an intervention workflow: a system can surface
 several plausible target regions for robotic or image-guided assistance, while preserving a strong
 classical baseline and using QML only where it has a plausible narrow role.
+
+## Active-Learning / Annotation-Triage Experiment
+
+The first active-learning implementation is in
+`endoscopy_guidance/active_learning_candidate_benchmark.py`. It simulates candidate annotation
+rounds on the sequence-held-out CVC RGB export:
+
+1. Start with 40 balanced labeled candidates.
+2. Acquire batches of 40 additional candidate labels.
+3. Compare acquisition policies:
+   - random sampling
+   - classical uncertainty
+   - PQK uncertainty
+   - PQK uncertainty plus diversity
+   - PQK hybrid uncertainty plus random coverage
+4. Retrain classical and PQK rerankers at each annotation budget.
+5. Evaluate held-out candidate AUC, top-k target recovery, and refined map metrics.
+
+Command:
+
+```bash
+python3 endoscopy_guidance/active_learning_candidate_benchmark.py \
+  --data_dir endoscopy_guidance/exports/cvc_test_rgb \
+  --results_csv endoscopy_guidance/results/cvc_test_rgb_active_learning_metrics.csv \
+  --aggregate_csv endoscopy_guidance/results/cvc_test_rgb_active_learning_aggregate.csv \
+  --top_n 8 \
+  --grid_stride 48 \
+  --nms_dist 20 \
+  --patch_radius 14 \
+  --sample_folds 5 \
+  --initial_labels 40 \
+  --batch_size 40 \
+  --rounds 4 \
+  --repeats 3 \
+  --strategies random classical_uncertainty pqk_uncertainty pqk_diversity pqk_hybrid \
+  --image_features \
+  --refine_alpha 0 \
+  --refine_sigma 20 \
+  --refine_top_k 5
+```
+
+For a classical logistic-regression final reranker, the PQK-hybrid acquisition policy gives the
+best top-5 guidance recovery after active annotation begins:
+
+| Labeled candidates | Random top-5 | Classical-uncertainty top-5 | PQK-uncertainty top-5 | PQK-diversity top-5 | PQK-hybrid top-5 |
+|---:|---:|---:|---:|---:|---:|
+| 40 | 0.529 | 0.529 | 0.529 | 0.529 | 0.529 |
+| 80 | 0.549 | 0.534 | 0.554 | 0.535 | 0.560 |
+| 120 | 0.554 | 0.544 | 0.554 | 0.530 | 0.565 |
+| 160 | 0.529 | 0.529 | 0.564 | 0.550 | 0.575 |
+| 200 | 0.519 | 0.534 | 0.565 | 0.565 | 0.580 |
+
+The strongest signal is label discovery. After the initial balanced seed, random sampling selects
+positive candidates at roughly 5-8%, while PQK-based policies select positives much more often:
+
+| Labeled candidates | Random selected-positive rate | PQK-uncertainty selected-positive rate | PQK-diversity selected-positive rate | PQK-hybrid selected-positive rate |
+|---:|---:|---:|---:|---:|
+| 80 | 0.053 | 0.053 | 0.077 | 0.055 |
+| 120 | 0.073 | 0.137 | 0.187 | 0.115 |
+| 160 | 0.065 | 0.268 | 0.158 | 0.157 |
+| 200 | 0.083 | 0.245 | 0.172 | 0.193 |
+
+Interpretation:
+
+- This is a stronger quantum-medical-AI direction than direct segmentation replacement.
+- PQK uncertainty is useful for finding rare target-positive candidate annotations under heavy
+  class imbalance.
+- Pure PQK acquisition can over-focus on positives, which helps discovery but does not always
+  improve final AUC or Dice.
+- PQK-hybrid acquisition is more promising for intervention guidance because it preserves coverage
+  while improving top-5 target recovery over random and classical uncertainty sampling.
+- Dice remains low because the refinement output is still a Gaussian candidate map, not a learned
+  segmentation decoder. The paper should treat Dice as a secondary diagnostic, not the primary
+  success claim.
+
+Updated paper direction:
+
+> Quantum-kernel active learning for candidate annotation and top-k target recovery in
+> endoscopic image-guided intervention under domain shift.
