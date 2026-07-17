@@ -256,6 +256,61 @@ Interpretation:
   projected quantum-kernel reranker is competitive with strong classical rerankers and improves
   clinically relevant top-k target recovery over the degraded heatmap baseline.
 
+## Reranker-To-Heatmap Refinement
+
+Candidate ranking is useful, but a real guidance system should output a refined target map. The
+benchmark now evaluates a simple reranker-to-heatmap refinement step:
+
+1. Rank candidate locations using the trained reranker.
+2. Paint Gaussian blobs at the top-ranked candidates.
+3. Normalize the resulting guidance map.
+4. Compare the original heatmap and refined heatmap using pointing-game, peak-center distance,
+   Dice, and IoU.
+
+Best current refinement setting:
+
+```bash
+python3 endoscopy_guidance/candidate_ranking_benchmark.py \
+  --data_dir endoscopy_guidance/exports/cvc_test_rgb \
+  --results_csv endoscopy_guidance/results/cvc_test_rgb_refinement_metrics_a0_s20.csv \
+  --aggregate_csv endoscopy_guidance/results/cvc_test_rgb_refinement_aggregate_a0_s20.csv \
+  --candidates_csv endoscopy_guidance/results/cvc_test_rgb_refinement_candidates_a0_s20.csv \
+  --top_n 8 \
+  --grid_stride 48 \
+  --nms_dist 20 \
+  --patch_radius 14 \
+  --sample_folds 5 \
+  --image_features \
+  --refine_alpha 0.0 \
+  --refine_sigma 20 \
+  --refine_top_k 5
+```
+
+This setting uses the reranker-generated map directly rather than blending with the degraded
+backbone heatmap.
+
+Refined heatmap result:
+
+| Model | Refined pointing | Refined peak distance | Refined Dice | Refined IoU |
+|---|---:|---:|---:|---:|
+| Original heatmap baseline | 0.136 | 78.1 px | 0.086 | 0.055 |
+| ExtraTrees refinement | 0.438 | 53.7 px | 0.274 | 0.182 |
+| Random forest refinement | 0.454 | 55.2 px | 0.260 | 0.173 |
+| Balanced PQK, reps 2, C=1 refinement | 0.392 | 54.6 px | 0.255 | 0.166 |
+| Balanced PQK, reps 3, C=10 refinement | 0.410 | 54.0 px | 0.262 | 0.171 |
+| Balanced PQK, reps 3, C=1 refinement | 0.377 | 59.4 px | 0.242 | 0.158 |
+
+Interpretation:
+
+- The refinement module turns reranking into an actual corrected guidance output.
+- All reranker-refined maps substantially improve over the original domain-shifted heatmap.
+- Random forest has the best refined pointing, while ExtraTrees has the best refined Dice/IoU.
+- Balanced PQK remains competitive and gives a clinically meaningful map-level improvement:
+  pointing improves from 0.136 to 0.410, peak distance drops from 78.1 px to 54.0 px, Dice rises
+  from 0.086 to 0.262, and IoU rises from 0.055 to 0.171.
+- This strengthens the SPIE framing because the method now improves an image-guidance output,
+  not only a candidate-ranking table.
+
 ## Go/No-Go Criteria
 
 This becomes abstract-worthy if at least one of these holds:

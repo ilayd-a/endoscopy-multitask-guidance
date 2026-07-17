@@ -290,7 +290,120 @@ def rank_metrics(test_rows: list[dict], scores: np.ndarray, prefix: str) -> dict
     }
 
 
-def evaluate_model(name, model, X_train, y_train, X_test, y_test, test_rows):
+def normalize01(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    vmin = float(np.nanmin(values))
+    vmax = float(np.nanmax(values))
+    if not math.isfinite(vmin) or not math.isfinite(vmax) or vmax <= vmin:
+        return np.zeros_like(values, dtype=float)
+    return (values - vmin) / (vmax - vmin)
+
+
+def heatmap_metrics(heatmap: np.ndarray, gt_mask: np.ndarray, threshold: float = 0.5) -> dict:
+    heatmap_norm = normalize01(heatmap)
+    peak = np.unravel_index(np.argmax(heatmap_norm), heatmap_norm.shape)
+    cy, cx = mask_centroid(gt_mask)
+    pred_mask = heatmap_norm >= threshold
+    gt = gt_mask.astype(bool)
+    intersection = np.logical_and(pred_mask, gt).sum()
+    pred_sum = pred_mask.sum()
+    gt_sum = gt.sum()
+    union = np.logical_or(pred_mask, gt).sum()
+    dice = 1.0 if pred_sum + gt_sum == 0 else float(2 * intersection / (pred_sum + gt_sum))
+    iou = 1.0 if union == 0 else float(intersection / union)
+    center_dist = float(np.hypot(peak[0] - cy, peak[1] - cx)) if not math.isnan(cy) else float("nan")
+    return {
+        "pointing": float(gt_mask[peak[0], peak[1]] > 0),
+        "peak_center_dist": center_dist,
+        "dice": dice,
+        "iou": iou,
+    }
+
+
+def gaussian_candidate_map(
+    shape: tuple[int, int],
+    sample_rows: list[dict],
+    scores: np.ndarray,
+    sigma: float,
+    top_k: int,
+) -> np.ndarray:
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    out = np.zeros(shape, dtype=float)
+    if len(sample_rows) == 0:
+        return out
+
+    order = np.argsort(scores)[::-1]
+    if top_k > 0:
+        order = order[:top_k]
+    score_norm = normalize01(scores)
+    for idx in order:
+        row = sample_rows[int(idx)]
+        weight = float(score_norm[int(idx)])
+        if weight <= 0:
+            weight = 1e-6
+        dist2 = (yy - int(row["y"])) ** 2 + (xx - int(row["x"])) ** 2
+        out += weight * np.exp(-dist2 / (2 * sigma ** 2))
+    return normalize01(out)
+
+
+def refinement_metrics(
+    data_dir: Path,
+    test_rows: list[dict],
+    scores: np.ndarray,
+    alpha: float,
+    sigma: float,
+    top_k: int,
+    threshold: float,
+) -> dict:
+    by_sample = defaultdict(list)
+    by_score = defaultdict(list)
+    for row, score in zip(test_rows, scores):
+        by_sample[row["sample_id"]].append(row)
+        by_score[row["sample_id"]].append(float(score))
+
+    base_records = []
+    refined_records = []
+    for sid, sample_rows in by_sample.items():
+        gt = np.load(data_dir / f"gt_mask_{sid}.npy")
+        heatmap = np.load(data_dir / f"pred_heatmap_{sid}.npy")
+        base = normalize01(heatmap)
+        candidate_map = gaussian_candidate_map(
+            base.shape,
+            sample_rows,
+            np.asarray(by_score[sid], dtype=float),
+            sigma=sigma,
+            top_k=top_k,
+        )
+        refined = normalize01(alpha * base + (1.0 - alpha) * candidate_map)
+        base_records.append(heatmap_metrics(base, gt, threshold=threshold))
+        refined_records.append(heatmap_metrics(refined, gt, threshold=threshold))
+
+    out = {}
+    for key in ["pointing", "peak_center_dist", "dice", "iou"]:
+        base_values = np.asarray([record[key] for record in base_records], dtype=float)
+        refined_values = np.asarray([record[key] for record in refined_records], dtype=float)
+        out[f"base_{key}"] = float(np.nanmean(base_values))
+        out[f"refined_{key}"] = float(np.nanmean(refined_values))
+        direction = -1.0 if key == "peak_center_dist" else 1.0
+        out[f"refined_{key}_delta"] = float(direction * np.nanmean(refined_values - base_values))
+    return out
+
+
+def evaluate_model(
+    name,
+    model,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    test_rows,
+    data_dir: Path,
+    refine_alpha: float,
+    refine_sigma: float,
+    refine_top_k: int,
+    refine_threshold: float,
+):
     t0 = time.time()
     model.fit(X_train, y_train)
     elapsed = time.time() - t0
@@ -306,6 +419,15 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test, test_rows):
         "confusion_matrix": confusion_matrix(y_test, pred).tolist(),
     }
     row.update(rank_metrics(test_rows, scores, "model"))
+    row.update(refinement_metrics(
+        data_dir,
+        test_rows,
+        scores,
+        alpha=refine_alpha,
+        sigma=refine_sigma,
+        top_k=refine_top_k,
+        threshold=refine_threshold,
+    ))
     row.update(model_kernel_diagnostics(model, y_train))
     return row
 
@@ -370,6 +492,18 @@ def aggregate_metric_rows(rows: list[dict]) -> list[dict]:
         "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
+        "base_pointing",
+        "refined_pointing",
+        "refined_pointing_delta",
+        "base_peak_center_dist",
+        "refined_peak_center_dist",
+        "refined_peak_center_dist_delta",
+        "base_dice",
+        "refined_dice",
+        "refined_dice_delta",
+        "base_iou",
+        "refined_iou",
+        "refined_iou_delta",
         "train_time_sec",
         "pca_variance_retained",
         "kernel_target_alignment",
@@ -424,11 +558,16 @@ def main():
         default=0,
         help="Use grouped k-fold over sample IDs. Default 0 means leave-one-sample-out.",
     )
+    parser.add_argument("--refine_alpha", type=float, default=0.35, help="Blend weight for original heatmap.")
+    parser.add_argument("--refine_sigma", type=float, default=12.0, help="Gaussian sigma for candidate score blobs.")
+    parser.add_argument("--refine_top_k", type=int, default=5, help="Number of ranked candidates used for refinement.")
+    parser.add_argument("--refine_threshold", type=float, default=0.5, help="Threshold for refined heatmap Dice/IoU.")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+    data_dir = Path(args.data_dir)
 
     X_raw, y, candidate_rows = build_candidates(
-        Path(args.data_dir),
+        data_dir,
         top_n=args.top_n,
         grid_stride=args.grid_stride,
         nms_dist=args.nms_dist,
@@ -472,12 +611,34 @@ def main():
             "train_positive": int(y_train.sum()),
             "test_positive": int(y_test.sum()),
         }
+        baseline.update(refinement_metrics(
+            data_dir,
+            test_rows,
+            heatmap_scores,
+            alpha=args.refine_alpha,
+            sigma=args.refine_sigma,
+            top_k=args.refine_top_k,
+            threshold=args.refine_threshold,
+        ))
         baseline_rows.append(baseline)
         metric_rows.append(baseline)
 
         for name, estimator in models(args.seed).items():
             print(f"[run] held_out={fold_name} model={name}")
-            row = evaluate_model(name, estimator, X_train, y_train, X_test, y_test, test_rows)
+            row = evaluate_model(
+                name,
+                estimator,
+                X_train,
+                y_train,
+                X_test,
+                y_test,
+                test_rows,
+                data_dir=data_dir,
+                refine_alpha=args.refine_alpha,
+                refine_sigma=args.refine_sigma,
+                refine_top_k=args.refine_top_k,
+                refine_threshold=args.refine_threshold,
+            )
             row.update({
                 "held_out_sample": fold_name,
                 **prep,
@@ -500,6 +661,18 @@ def main():
         "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
+        "base_pointing",
+        "refined_pointing",
+        "refined_pointing_delta",
+        "base_peak_center_dist",
+        "refined_peak_center_dist",
+        "refined_peak_center_dist_delta",
+        "base_dice",
+        "refined_dice",
+        "refined_dice_delta",
+        "base_iou",
+        "refined_iou",
+        "refined_iou_delta",
         "train_time_sec",
         "confusion_matrix",
         "pca_components",
@@ -526,6 +699,18 @@ def main():
         "model_top5_hit",
         "model_top1_center_dist",
         "model_best_positive_rank",
+        "base_pointing",
+        "refined_pointing",
+        "refined_pointing_delta",
+        "base_peak_center_dist",
+        "refined_peak_center_dist",
+        "refined_peak_center_dist_delta",
+        "base_dice",
+        "refined_dice",
+        "refined_dice_delta",
+        "base_iou",
+        "refined_iou",
+        "refined_iou_delta",
         "train_time_sec",
         "pca_variance_retained",
         "kernel_target_alignment",
