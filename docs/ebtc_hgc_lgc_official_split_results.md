@@ -113,3 +113,50 @@ The most honest next pivot is not "PQK improves diagnosis," but either:
 - use PQK as a negative/limited benchmark with kernel diagnostics, or
 - move the quantum component to a different task where it may have more room to help, such as
   hard-case candidate reranking, uncertainty triage, or multimodal WLI/NBI feature fusion.
+
+## Hard-Case Triage Follow-Up
+
+The benchmark also exports enough per-sample predictions to test a second-reader design:
+
+> keep the classical prediction for confident cases, and let PQK override only the least-confident
+> classical cases.
+
+Analysis command:
+
+```bash
+python3 EndoscopicBladderTissue/experiments/hard_case_triage_ebtc.py
+```
+
+Outputs:
+
+```text
+EndoscopicBladderTissue/results/publication_benchmark/ebtc_hard_case_triage_metrics.csv
+EndoscopicBladderTissue/results/publication_benchmark/ebtc_hard_case_triage_aggregate.csv
+```
+
+The script sweeps:
+
+- fraction of least-confident classical cases sent to PQK: 10%, 20%, 30%, 40%, 50%
+- PQK confidence gate: `abs(PQK score - 0.5) >= 0.0, 0.05, 0.1, 0.2`
+
+### Strict Comparison Against Best Classical
+
+| Train size | Best standalone classical balanced accuracy | Best PQK-triage hybrid balanced accuracy | Best hybrid setting | Interpretation |
+|---:|---:|---:|---|---|
+| 40 | 0.731 | 0.762 | Linear SVM C0.1 + PQK reps2, 30% triage, margin 0.05 | Small low-label improvement. |
+| 80 | 0.803 | 0.784 | Linear SVM C0.1 + PQK reps1, 10% triage, margin 0.2 | Hybrid does not beat classical. |
+| 160 | 0.743 | 0.737 | RBF SVM C0.1 + PQK reps1, 10% triage, margin 0.1 | Hybrid does not beat classical. |
+| 240 | 0.783 | 0.774 | Linear SVM C0.1 + PQK reps2, 10% triage, margin 0.2 | Hybrid does not beat classical. |
+
+The low-label result is the first actually positive EBTC signal for a quantum component:
+
+- balanced accuracy improves from 0.731 to 0.762 at 40 labels
+- sensitivity improves from 0.626 to 0.694
+- specificity stays nearly unchanged, from 0.836 to 0.830
+
+This is still not enough for a strong clinical claim. It is, however, a more plausible SPIE
+research angle than direct diagnosis:
+
+> A projected quantum-kernel second reader may improve low-label endoscopic tissue grading by
+> selectively reranking classically uncertain cases, but the effect disappears as classical
+> baselines receive more labels.
