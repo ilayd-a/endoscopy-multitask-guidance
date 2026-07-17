@@ -150,6 +150,27 @@ Not yet defensible:
 > Quantum prompt selection is significantly better than strong classical
 > candidate rankers.
 
+## Multi-Positive Prompt Ablation
+
+To test whether the bottleneck was single-prompt brittleness, the benchmark was
+extended with `--prompt_aggregation multi`, which passes the top-K selected
+positive points to SAM together. For `point_box`, the selected prompts share one
+union box.
+
+Validation improved, but held-out test did not:
+
+| Setting | Split | PQK Dice | Classical Dice | Oracle Dice |
+|---|---|---:|---:|---:|
+| Top-3 point+union-box multi-prompt | Val | 0.509 | 0.513 | 0.803 |
+| Top-3 point+union-box multi-prompt | Test | 0.242 | 0.237 | 0.502 |
+| Top-5 point+union-box multi-prompt | Test | 0.220 | 0.200 | 0.465 |
+| Top-3 point-only multi-prompt | Test | 0.176 | 0.173 | 0.371 |
+| Top-5 point-only multi-prompt | Test | 0.182 | 0.150 | 0.377 |
+
+Interpretation: giving SAM more positive prompts raises prompt-hit rate, but the
+combined prompt often makes the predicted mask less specific. The stronger path
+is calibrated prompt-quality selection, not multi-positive prompting.
+
 ## Next Improvements
 
 1. Add more classical comparators and paired statistical tests.

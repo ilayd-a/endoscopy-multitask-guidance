@@ -174,3 +174,43 @@ ceiling, but the validation-selected QML advantage did not transfer cleanly to
 test. The best test ranker in this run was classical RandomForestReg. QML
 rankers still strongly beat heatmap-score ranking but do not yet beat the best
 classical prompt-quality regressor on the full held-out test.
+
+## Calibrated Quality-Score Blends
+
+The ranker was extended to test per-sample normalized blends of:
+
+- learned prompt-quality prediction
+- SAM's own mask confidence score
+- original heatmap score
+
+Validation:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.854 |
+| QML PQF RidgeReg 10pc + 0.6/0.2/0.2 blend | 0.550 |
+| Classical HistGBReg + 0.7/0.2/0.1 blend | 0.547 |
+| QML PQF RidgeReg 10pc | 0.537 |
+| Classical ExtraTreesReg | 0.533 |
+
+Held-out test:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| QML PQK quality 16pc | 0.315 |
+| QML PQK quality 12pc | 0.305 |
+| QML PQK quality 16pc + 0.7/0.2/0.1 blend | 0.288 |
+| Classical RandomForestReg | 0.263 |
+| QML PQF HistGBReg 16pc | 0.252 |
+| Heatmap score | 0.089 |
+
+Interpretation: score blending helps on validation but does not improve the
+held-out test. The best automatic selector so far is the unblended
+`QML_PQK_quality_16pc`, which reaches 0.315 Dice on the held-out test. This is a
+small improvement over the previous candidate-ranking PQK prompt pipeline
+(`0.303`) and a clearer quantum contribution than the multi-positive prompt
+ablation, but it is still far below the oracle prompt-quality ceiling (`0.664`).
+
+The next research bottleneck is prompt localization under domain shift, not SAM
+mask generation once a good prompt is available.

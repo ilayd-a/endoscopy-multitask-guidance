@@ -156,6 +156,49 @@ def sam_prompt_batch(
     return mask, float(scores[prompt_idx, mask_idx].item()), point_yxs[prompt_idx]
 
 
+def union_prompt_box(point_yxs: list[tuple[int, int]], shape: tuple[int, int], radius: int) -> np.ndarray:
+    boxes = np.asarray([prompt_box(point, shape, radius) for point in point_yxs], dtype=np.float32)
+    return np.asarray([
+        np.min(boxes[:, 0]),
+        np.min(boxes[:, 1]),
+        np.max(boxes[:, 2]),
+        np.max(boxes[:, 3]),
+    ], dtype=np.float32)
+
+
+def sam_multi_prompt(
+    predictor,
+    point_yxs: list[tuple[int, int]],
+    image_shape: tuple[int, int],
+    prompt_mode: str,
+    box_radius: int,
+) -> tuple[np.ndarray, float, tuple[int, int]]:
+    device = predictor.device
+    point_coords = None
+    point_labels = None
+    boxes = None
+    if prompt_mode in {"point", "point_box"}:
+        coords = np.asarray([[x, y] for y, x in point_yxs], dtype=np.float32)
+        coords = predictor.transform.apply_coords(coords, image_shape)
+        point_coords = torch.as_tensor(coords[None, :, :], dtype=torch.float32, device=device)
+        point_labels = torch.ones((1, len(point_yxs)), dtype=torch.int, device=device)
+    if prompt_mode in {"box", "point_box"}:
+        box_arr = union_prompt_box(point_yxs, image_shape, box_radius)[None, :]
+        box_arr = predictor.transform.apply_boxes(box_arr, image_shape)
+        boxes = torch.as_tensor(box_arr, dtype=torch.float32, device=device)
+
+    masks, scores, _ = predictor.predict_torch(
+        point_coords=point_coords,
+        point_labels=point_labels,
+        boxes=boxes,
+        multimask_output=True,
+        return_logits=False,
+    )
+    mask_idx = int(torch.argmax(scores.reshape(-1)).item())
+    mask = masks[0, mask_idx].detach().cpu().numpy().astype(bool)
+    return mask, float(scores[0, mask_idx].item()), point_yxs[0]
+
+
 def heatmap_baseline(data_dir: Path, sample_id: str, threshold: float) -> np.ndarray:
     heatmap = np.load(data_dir / f"pred_heatmap_{sample_id}.npy")
     return heatmap >= threshold
@@ -194,6 +237,12 @@ def oracle_point(sample_rows: pd.DataFrame) -> tuple[int, int]:
     return int(row.y), int(row.x)
 
 
+def oracle_points(sample_rows: pd.DataFrame, top_k: int) -> list[tuple[int, int]]:
+    positives = sample_rows[sample_rows["label"] > 0].sort_values("center_dist")
+    source = positives if not positives.empty else sample_rows.sort_values("center_dist")
+    return [(int(row.y), int(row.x)) for row in source.head(max(1, top_k)).itertuples(index=False)]
+
+
 def evaluate_prompt_strategy(
     predictor,
     data_dir: Path,
@@ -202,6 +251,7 @@ def evaluate_prompt_strategy(
     name: str,
     prompt_mode: str,
     box_radius: int,
+    prompt_aggregation: str,
     cache_dir: Path | None,
     quiet: bool,
 ):
@@ -212,13 +262,25 @@ def evaluate_prompt_strategy(
         t0 = time.time()
         candidates = points_by_sample[sid]
         set_cached_or_compute_image(predictor, image, sid, cache_dir)
-        mask, sam_score, point_yx = sam_prompt_batch(
-            predictor,
-            candidates,
-            image.shape[:2],
-            prompt_mode=prompt_mode,
-            box_radius=box_radius,
-        )
+        if prompt_aggregation == "multi":
+            mask, sam_score, point_yx = sam_multi_prompt(
+                predictor,
+                candidates,
+                image.shape[:2],
+                prompt_mode=prompt_mode,
+                box_radius=box_radius,
+            )
+            prompt_hit = int(any(gt[y, x] > 0 for y, x in candidates))
+        else:
+            mask, sam_score, point_yx = sam_prompt_batch(
+                predictor,
+                candidates,
+                image.shape[:2],
+                prompt_mode=prompt_mode,
+                box_radius=box_radius,
+            )
+            y, x = point_yx
+            prompt_hit = int(gt[y, x] > 0)
         elapsed = time.time() - t0
         dice, iou = dice_iou(mask, gt)
         y, x = point_yx
@@ -230,11 +292,12 @@ def evaluate_prompt_strategy(
             "sam_score": sam_score,
             "dice": dice,
             "iou": iou,
-            "prompt_hit": int(gt[y, x] > 0),
+            "prompt_hit": prompt_hit,
+            "prompt_count": len(candidates),
             "elapsed_sec": elapsed,
         })
         if not quiet:
-            print(f"[sam] {name} {sid} dice={dice:.3f} hit={int(gt[y, x] > 0)}")
+            print(f"[sam] {name} {sid} dice={dice:.3f} hit={prompt_hit}")
     return rows
 
 
@@ -261,6 +324,7 @@ def main():
     parser.add_argument("--prompt_mode", choices=["point", "box", "point_box"], default="point_box")
     parser.add_argument("--box_radius", type=int, default=48)
     parser.add_argument("--sam_top_k", type=int, default=1)
+    parser.add_argument("--prompt_aggregation", choices=["separate", "multi"], default="separate")
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--pqk_c", type=float, default=1.0)
     parser.add_argument("--quiet", action="store_true")
@@ -338,7 +402,10 @@ def main():
         point_maps["heatmap_peak"][sid] = [(int(hy), int(hx))]
         random_rows = sample_rows.iloc[rng.choice(len(sample_rows), size=max(1, args.sam_top_k), replace=False)]
         point_maps["random_candidate"][sid] = [(int(row.y), int(row.x)) for row in random_rows.itertuples(index=False)]
-        point_maps["oracle_candidate"][sid] = [oracle_point(sample_rows)]
+        if args.prompt_aggregation == "multi":
+            point_maps["oracle_candidate"][sid] = oracle_points(sample_rows, args.sam_top_k)
+        else:
+            point_maps["oracle_candidate"][sid] = [oracle_point(sample_rows)]
         classical_rank_scores = hybrid_scores(sample_rows, classical_scores[sample_mask], args.rank_blend_alpha)
         pqk_rank_scores = hybrid_scores(sample_rows, pqk_scores[sample_mask], args.rank_blend_alpha)
         point_maps[classical_name][sid] = ranked_points(sample_rows, classical_rank_scores, args.sam_top_k)
@@ -363,6 +430,7 @@ def main():
             "dice": dice,
             "iou": iou,
             "prompt_hit": np.nan,
+            "prompt_count": 0,
             "elapsed_sec": 0.0,
         })
 
@@ -375,6 +443,7 @@ def main():
             name,
             prompt_mode=args.prompt_mode,
             box_radius=args.box_radius,
+            prompt_aggregation=args.prompt_aggregation,
             cache_dir=embedding_cache,
             quiet=args.quiet,
         ))
@@ -382,7 +451,7 @@ def main():
     output_csv = Path(args.output_csv)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with output_csv.open("w", newline="") as f:
-        fieldnames = ["strategy", "sample_id", "prompt_y", "prompt_x", "prompt_hit", "sam_score", "dice", "iou", "elapsed_sec"]
+        fieldnames = ["strategy", "sample_id", "prompt_y", "prompt_x", "prompt_hit", "prompt_count", "sam_score", "dice", "iou", "elapsed_sec"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(out_rows)

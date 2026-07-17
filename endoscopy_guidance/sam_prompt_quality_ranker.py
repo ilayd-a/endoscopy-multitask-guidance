@@ -193,6 +193,32 @@ def sample_level_eval(qdf: pd.DataFrame, scores: np.ndarray, name: str) -> dict:
     }
 
 
+def per_sample_normalize(values: np.ndarray, sample_ids: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(values, dtype=float)
+    for sid in np.unique(sample_ids):
+        mask = sample_ids == sid
+        sample_values = values[mask].astype(float)
+        lo = float(np.nanmin(sample_values))
+        hi = float(np.nanmax(sample_values))
+        if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+            out[mask] = (sample_values - lo) / (hi - lo)
+    return out
+
+
+def blended_sample_scores(
+    qdf: pd.DataFrame,
+    model_scores: np.ndarray,
+    model_weight: float,
+    sam_weight: float,
+    heatmap_weight: float,
+) -> np.ndarray:
+    sample_ids = qdf["sample_id"].to_numpy()
+    model_norm = per_sample_normalize(np.asarray(model_scores, dtype=float), sample_ids)
+    sam_norm = per_sample_normalize(qdf["sam_score"].to_numpy(dtype=float), sample_ids)
+    heatmap_norm = per_sample_normalize(qdf["heatmap_score"].to_numpy(dtype=float), sample_ids)
+    return model_weight * model_norm + sam_weight * sam_norm + heatmap_weight * heatmap_norm
+
+
 def projected_quantum_features(X_angle: np.ndarray, reps: int) -> np.ndarray:
     features = [np.cos(X_angle), np.sin(X_angle)]
     if reps >= 2:
@@ -238,6 +264,13 @@ def evaluate_rankers(args):
         row = sample_level_eval(eval_df, pred, name)
         row["train_rmse"] = float(mean_squared_error(y_train_reg, model.predict(X_train)) ** 0.5)
         results.append(row)
+        for model_w, sam_w, heatmap_w in args.blend_weights:
+            blend = blended_sample_scores(eval_df, pred, model_w, sam_w, heatmap_w)
+            results.append(sample_level_eval(
+                eval_df,
+                blend,
+                f"{name}_blend_m{model_w:g}_s{sam_w:g}_h{heatmap_w:g}",
+            ))
 
     if len(np.unique(y_train_good)) == 2:
         for n_components in args.pqk_components:
@@ -259,6 +292,15 @@ def evaluate_rankers(args):
                 row = sample_level_eval(eval_df, qscores, qname)
                 row["pca_variance"] = pca_info["pca_variance_retained"]
                 results.append(row)
+                for model_w, sam_w, heatmap_w in args.blend_weights:
+                    blend = blended_sample_scores(eval_df, qscores, model_w, sam_w, heatmap_w)
+                    blend_row = sample_level_eval(
+                        eval_df,
+                        blend,
+                        f"{qname}_blend_m{model_w:g}_s{sam_w:g}_h{heatmap_w:g}",
+                    )
+                    blend_row["pca_variance"] = pca_info["pca_variance_retained"]
+                    results.append(blend_row)
 
             pqk = ProjectedQuantumKernelSVC(gamma="scale", reps=args.pqk_reps, C=args.pqk_c, class_weight="balanced")
             pqk.fit(X_train_q, y_train_good)
@@ -267,6 +309,16 @@ def evaluate_rankers(args):
             row["pca_variance"] = pca_info["pca_variance_retained"]
             row["good_threshold"] = good_threshold
             results.append(row)
+            for model_w, sam_w, heatmap_w in args.blend_weights:
+                blend = blended_sample_scores(eval_df, scores, model_w, sam_w, heatmap_w)
+                blend_row = sample_level_eval(
+                    eval_df,
+                    blend,
+                    f"QML_PQK_quality_{n_components}pc_blend_m{model_w:g}_s{sam_w:g}_h{heatmap_w:g}",
+                )
+                blend_row["pca_variance"] = pca_info["pca_variance_retained"]
+                blend_row["good_threshold"] = good_threshold
+                results.append(blend_row)
 
     summary = pd.DataFrame(results).sort_values("dice_mean", ascending=False)
     output_csv = Path(args.output_csv)
@@ -300,6 +352,15 @@ def main():
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--pqk_c", type=float, default=1.0)
     parser.add_argument("--good_threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--blend_weights",
+        type=float,
+        nargs=3,
+        action="append",
+        metavar=("MODEL", "SAM", "HEATMAP"),
+        default=[(0.7, 0.2, 0.1), (0.6, 0.2, 0.2), (0.5, 0.3, 0.2)],
+        help="Per-sample normalized model/SAM/heatmap score blends to evaluate.",
+    )
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--use_prompt_quality_cache", action="store_true")
