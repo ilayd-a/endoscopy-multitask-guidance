@@ -133,3 +133,44 @@ Build a wider prompt-quality cache:
 The expected target is to recover the high oracle ceiling while preserving the
 QML feature-regression advantage seen in the mixed-80 test.
 
+## All-Candidate-80 Cache on MPS
+
+After confirming that Apple MPS is available outside the sandbox, the wider
+prompt-quality cache was generated on GPU.
+
+Prompt pool:
+
+- 80 train frames, all 68 validation frames, all 66 test frames
+- all generated candidates per selected frame
+- radius: 48
+
+Validation:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.854 |
+| QML PQF RidgeReg 10pc | 0.537 |
+| QML PQF RidgeReg 12pc | 0.534 |
+| QML PQF RidgeReg 8pc | 0.534 |
+| Classical HistGBReg | 0.529 |
+| Classical ExtraTreesReg | 0.522 |
+| Heatmap score | 0.363 |
+
+Test:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| Classical RandomForestReg | 0.263 |
+| QML PQF HistGBReg 16pc | 0.252 |
+| QML PQK quality 16pc | 0.241 |
+| QML PQF RidgeReg 12pc | 0.234 |
+| Classical HistGBReg | 0.234 |
+| Classical ExtraTreesReg | 0.210 |
+| Heatmap score | 0.089 |
+
+Interpretation: MPS makes the wider cache feasible and restores a high oracle
+ceiling, but the validation-selected QML advantage did not transfer cleanly to
+test. The best test ranker in this run was classical RandomForestReg. QML
+rankers still strongly beat heatmap-score ranking but do not yet beat the best
+classical prompt-quality regressor on the full held-out test.
