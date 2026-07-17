@@ -141,6 +141,67 @@ publishable reranking comparison. The heatmap already localizes every sample cor
 reranker has meaningful room to improve. The next dataset export should include domain-shifted
 or failure-prone cases where the heatmap top candidates include plausible false positives.
 
+## Held-Out CVC Test Export
+
+The exporter in `endoscopy_guidance/export_cvc_predictions.py` reads the local
+`endoscopy-multitask-guidance` checkpoint `models/unet_cvc.pth` and exports NumPy triplets for
+the sequence-held-out CVC test split.
+
+Export command:
+
+```bash
+MPLCONFIGDIR=/private/tmp/mplconfig XDG_CACHE_HOME=/private/tmp/xdgcache \
+python3 endoscopy_guidance/export_cvc_predictions.py \
+  --split test \
+  --output_dir endoscopy_guidance/exports/cvc_test \
+  --device cpu
+```
+
+Exported test split:
+
+- 66 held-out frames from CVC sequences 27-29
+- Mean Dice: 0.0862
+- Mean IoU: 0.0549
+- Pointing-game accuracy: 0.1364
+
+This is a much harder and more useful reranking setting than the original 10-frame sample export.
+
+Candidate-ranking command:
+
+```bash
+python3 endoscopy_guidance/candidate_ranking_benchmark.py \
+  --data_dir endoscopy_guidance/exports/cvc_test \
+  --results_csv endoscopy_guidance/results/cvc_test_candidate_ranking_metrics_balanced.csv \
+  --aggregate_csv endoscopy_guidance/results/cvc_test_candidate_ranking_aggregate_balanced.csv \
+  --candidates_csv endoscopy_guidance/results/cvc_test_candidate_table_balanced.csv \
+  --top_n 8 \
+  --grid_stride 48 \
+  --nms_dist 20 \
+  --patch_radius 14 \
+  --sample_folds 5
+```
+
+Held-out CVC candidate-ranking result:
+
+| Model | AUC | Balanced accuracy | F1 | Top-1 hit | Top-3 hit | Best positive rank |
+|---|---:|---:|---:|---:|---:|---:|
+| Heatmap score baseline | 0.640 | NA | NA | 0.135 | 0.212 | 11.655 |
+| Logistic regression | 0.709 | 0.636 | 0.179 | 0.166 | 0.197 | 9.414 |
+| RBF SVM | 0.744 | 0.695 | 0.218 | 0.105 | 0.334 | 9.058 |
+| Random forest | 0.842 | 0.555 | 0.186 | 0.333 | 0.590 | 3.339 |
+| Balanced PQK, reps 3, C=10 | 0.819 | 0.764 | 0.283 | 0.210 | 0.440 | 3.808 |
+
+Interpretation:
+
+- Random forest is currently the strongest classical reranker for top-k localization.
+- Balanced projected quantum kernels substantially improve over the raw heatmap baseline:
+  AUC improves from 0.640 to 0.819, top-3 hit from 0.212 to 0.440, and best-positive-rank
+  from 11.655 to 3.808.
+- The best PQK model has higher balanced accuracy and F1 than the listed classical baselines,
+  but lower top-1/top-3 localization than random forest.
+- This is now a viable SPIE-style result if framed carefully as quantum-kernel candidate
+  reranking under domain shift, not as broad quantum superiority.
+
 ## Go/No-Go Criteria
 
 This becomes abstract-worthy if at least one of these holds:

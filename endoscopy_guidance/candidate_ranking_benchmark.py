@@ -255,10 +255,31 @@ def models(seed: int):
         "Classical_LinearSVM_C1": SVC(C=1.0, kernel="linear", probability=True, class_weight="balanced", random_state=seed),
         "Classical_RBFSVM_C1_gammaScale": SVC(C=1.0, kernel="rbf", gamma="scale", probability=True, class_weight="balanced", random_state=seed),
         "Classical_RandomForest": RandomForestClassifier(n_estimators=300, class_weight="balanced", random_state=seed),
-        "QML_PQK_reps1_gammaScale": ProjectedQuantumKernelSVC(gamma="scale", reps=1),
-        "QML_PQK_reps2_gammaScale": ProjectedQuantumKernelSVC(gamma="scale", reps=2),
-        "QML_PQK_reps3_gammaScale": ProjectedQuantumKernelSVC(gamma="scale", reps=3),
+        "QML_PQK_reps1_C1_balanced": ProjectedQuantumKernelSVC(
+            gamma="scale", reps=1, C=1.0, class_weight="balanced"
+        ),
+        "QML_PQK_reps2_C1_balanced": ProjectedQuantumKernelSVC(
+            gamma="scale", reps=2, C=1.0, class_weight="balanced"
+        ),
+        "QML_PQK_reps3_C1_balanced": ProjectedQuantumKernelSVC(
+            gamma="scale", reps=3, C=1.0, class_weight="balanced"
+        ),
+        "QML_PQK_reps3_C10_balanced": ProjectedQuantumKernelSVC(
+            gamma="scale", reps=3, C=10.0, class_weight="balanced"
+        ),
     }
+
+
+def sample_folds(sample_ids: np.ndarray, n_folds: int):
+    unique_ids = np.asarray(sorted(np.unique(sample_ids)))
+    if n_folds <= 0 or n_folds >= len(unique_ids):
+        for sid in unique_ids:
+            yield str(sid), np.asarray([sid])
+        return
+
+    for fold_idx in range(n_folds):
+        held_out = unique_ids[fold_idx::n_folds]
+        yield f"fold_{fold_idx + 1:02d}", held_out
 
 
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]):
@@ -322,6 +343,12 @@ def main():
     parser.add_argument("--nms_dist", type=int, default=18)
     parser.add_argument("--patch_radius", type=int, default=12)
     parser.add_argument("--n_components", type=int, default=6)
+    parser.add_argument(
+        "--sample_folds",
+        type=int,
+        default=0,
+        help="Use grouped k-fold over sample IDs. Default 0 means leave-one-sample-out.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -340,20 +367,21 @@ def main():
 
     baseline_rows = []
     metric_rows = []
-    for held_out in sorted(np.unique(sample_ids)):
-        train_idx = np.where(sample_ids != held_out)[0]
-        test_idx = np.where(sample_ids == held_out)[0]
+    for fold_name, held_out_ids in sample_folds(sample_ids, args.sample_folds):
+        test_mask = np.isin(sample_ids, held_out_ids)
+        train_idx = np.where(~test_mask)[0]
+        test_idx = np.where(test_mask)[0]
         X_train_raw, X_test_raw = X_raw[train_idx], X_raw[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
         test_rows = [candidate_rows[i] for i in test_idx]
         if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
-            print(f"[skip] {held_out}: train/test split lacks both classes")
+            print(f"[skip] {fold_name}: train/test split lacks both classes")
             continue
 
         X_train, X_test, prep = fit_low_dim(X_train_raw, X_test_raw, args.n_components, args.seed)
         heatmap_scores = np.asarray([row["heatmap_score"] for row in test_rows], dtype=float)
         baseline = {
-            "held_out_sample": held_out,
+            "held_out_sample": fold_name,
             "model": "Baseline_HeatmapScore",
             "candidate_accuracy": float("nan"),
             "candidate_balanced_accuracy": float("nan"),
@@ -372,10 +400,10 @@ def main():
         metric_rows.append(baseline)
 
         for name, estimator in models(args.seed).items():
-            print(f"[run] held_out={held_out} model={name}")
+            print(f"[run] held_out={fold_name} model={name}")
             row = evaluate_model(name, estimator, X_train, y_train, X_test, y_test, test_rows)
             row.update({
-                "held_out_sample": held_out,
+                "held_out_sample": fold_name,
                 **prep,
                 "train_count": len(y_train),
                 "test_count": len(y_test),

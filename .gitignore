@@ -30,6 +30,7 @@ qml_kidney_stone/results/*.png
 qml_kidney_stone/results/*.csv
 qml_kidney_stone/__pycache__/
 endoscopy_guidance/results/*.csv
+endoscopy_guidance/exports/
 endoscopy_guidance/__pycache__/
 
 EndoscopicBladderTissue/dataset/

@@ -234,10 +234,11 @@ class ProjectedQuantumKernelSVC:
     concrete baseline for the "avoid kernel concentration" research question.
     """
 
-    def __init__(self, gamma="scale", C: float = 1.0, reps: int = 1):
+    def __init__(self, gamma="scale", C: float = 1.0, reps: int = 1, class_weight=None):
         self.gamma = gamma
         self.reps = reps
-        self.model = SVC(kernel="precomputed", C=C, probability=True)
+        self.class_weight = class_weight
+        self.model = SVC(kernel="precomputed", C=C, probability=True, class_weight=class_weight)
 
     def _project(self, X):
         features = [np.cos(X), np.sin(X)]
