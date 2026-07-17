@@ -122,6 +122,25 @@ The minimum credible SPIE abstract should include:
 5. Use the abstract to emphasize rigorous benchmarking and image-guided intervention relevance,
    not quantum hype.
 
+## First Candidate-Ranking Smoke Test
+
+The first implementation is in `endoscopy_guidance/candidate_ranking_benchmark.py`.
+It reads the `eval/sample_data` exports from the endoscopy multitask guidance repo and performs
+leave-one-frame-out candidate ranking.
+
+Initial result on the current 10-frame sample export:
+
+- 760 candidate points
+- 180 target-positive candidates
+- Baseline heatmap candidate AUC: about 0.9998
+- Baseline top-1 and top-3 localization hit rate: 1.0
+- Classical and projected quantum-kernel rerankers also achieve top-1 and top-3 hit rate of 1.0
+
+Interpretation: this sample export is useful as a code smoke test, but it is too easy for a
+publishable reranking comparison. The heatmap already localizes every sample correctly, so no
+reranker has meaningful room to improve. The next dataset export should include domain-shifted
+or failure-prone cases where the heatmap top candidates include plausible false positives.
+
 ## Go/No-Go Criteria
 
 This becomes abstract-worthy if at least one of these holds:
