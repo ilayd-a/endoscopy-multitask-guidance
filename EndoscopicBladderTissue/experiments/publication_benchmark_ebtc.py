@@ -502,7 +502,7 @@ def load_raw_features(args):
 
     from data_loader_ebtc import extract_resnet18_features_from_paths, list_ebtc_samples
 
-    paths, y = list_ebtc_samples(args.data_dir)
+    paths, y = list_ebtc_samples(args.data_dir, label_mode=args.label_mode)
     ids = [str(p.relative_to(args.data_dir)) for p in paths]
     if args.max_samples and args.max_samples < len(y):
         idx, _ = train_test_split(
@@ -617,6 +617,12 @@ def run_one_split(args, X_raw, y, ids, repeat_index: int, train_limit: int):
 def main():
     parser = argparse.ArgumentParser(description="Leakage-controlled EBTC publication benchmark")
     parser.add_argument("--data_dir", default=str(ROOT / "data" / "EBTC"))
+    parser.add_argument(
+        "--label_mode",
+        choices=["cancer_vs_noncancer", "hgc_vs_lgc"],
+        default="cancer_vs_noncancer",
+        help="Binary task: old cancer/non-cancer mode or README-focused HGC vs LGC.",
+    )
     parser.add_argument("--models", nargs="+", default=["classical", "qsvm_v1", "qsvm_v2"],
                         choices=["classical", "qsvm_v1", "qsvm_v2", "pqk", "all_qml"])
     parser.add_argument("--max_samples", type=int, default=300)
@@ -650,6 +656,7 @@ def main():
     split_metadata = []
     metadata = {
         "dataset": "synthetic" if args.synthetic else "EBTC",
+        "label_mode": args.label_mode,
         "seed": args.seed,
         "repeats": args.repeats,
         "train_sizes": train_sizes,

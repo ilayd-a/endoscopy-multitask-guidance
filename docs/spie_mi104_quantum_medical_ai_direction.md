@@ -5,13 +5,19 @@
 The leakage-controlled EBTC benchmark and the kidney-stone Dataset4 runs show that a plain
 "medical image classification + QSVM" story is not strong enough yet.
 
+- The README-linked EBTC dataset is the public bladder-tissue dataset from Zenodo/Kaggle,
+  containing HGC, LGC, NST, and NTL images with `annotations.csv` splits. The most relevant
+  comparison task for the endoscopy subgroup is HGC vs LGC, not the earlier CVC polyp export.
 - Whole-frame kidney-stone classification is unstable under the temporal split. Classical models
   and PQK models both struggle with accuracy and balanced accuracy.
 - Patch-level kidney-stone classification is more clinically meaningful, but it still shows poor
   calibrated detection on the held-out split. The best useful signal is ranking/AUC, not hard
   classification.
+- The correct HGC/LGC EBTC run suggests projected quantum kernels are most promising in the
+  low-label setting: PQK led classical baselines by AUC at 40 labels and tied them at 80 labels,
+  while strong classical RBF SVMs led at 160-240 labels.
 - Synthetic and EBTC runs suggest projected quantum kernels are more promising than vanilla
-  fidelity QSVM, but only in a carefully controlled, low-data benchmark.
+  fidelity QSVM, but only in carefully controlled, low-data benchmarks.
 
 This is not a dead end. It means the publishable question should move away from broad image
 classification and toward image-guided localization under limited annotation.
@@ -146,6 +152,10 @@ or failure-prone cases where the heatmap top candidates include plausible false 
 The exporter in `endoscopy_guidance/export_cvc_predictions.py` reads the local
 `endoscopy-multitask-guidance` checkpoint `models/unet_cvc.pth` and exports NumPy triplets for
 the sequence-held-out CVC test split.
+
+Important caveat: this CVC experiment is an exploratory image-guidance reranking test, not the
+README-linked EBTC/HGC-LGC benchmark. It should not be used as a direct comparison to the original
+bladder-tissue classification work.
 
 Export command:
 

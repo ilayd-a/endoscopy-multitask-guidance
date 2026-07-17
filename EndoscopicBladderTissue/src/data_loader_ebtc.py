@@ -51,8 +51,18 @@ BINARY_MAP = {
 
 CLASS_NAMES = {0: "non-cancer (NST+NTL)", 1: "cancer (HGC+LGC)"}
 
+HGC_LGC_MAP = {
+    "LGC": 0,   # low-grade cancer
+    "HGC": 1,   # high-grade cancer
+}
 
-def list_ebtc_samples(data_dir: str) -> tuple[list[Path], np.ndarray]:
+LABEL_MODES = {
+    "cancer_vs_noncancer": BINARY_MAP,
+    "hgc_vs_lgc": HGC_LGC_MAP,
+}
+
+
+def list_ebtc_samples(data_dir: str, label_mode: str = "cancer_vs_noncancer") -> tuple[list[Path], np.ndarray]:
     """
     Return EBTC image paths and binary labels without loading image features.
 
@@ -60,16 +70,18 @@ def list_ebtc_samples(data_dir: str) -> tuple[list[Path], np.ndarray]:
     must happen before any feature extraction, class balancing, PCA, or scaling.
     """
     data_dir = Path(data_dir)
+    if label_mode not in LABEL_MODES:
+        raise ValueError(f"Unknown label_mode={label_mode!r}. Expected one of {sorted(LABEL_MODES)}")
+    label_map = LABEL_MODES[label_mode]
     paths: list[Path] = []
     labels: list[int] = []
 
-    for class_name, label in BINARY_MAP.items():
+    for class_name, label in label_map.items():
         class_dir = data_dir / class_name
         if not class_dir.exists():
             raise FileNotFoundError(
                 f"Expected directory not found: {class_dir}\n"
-                "Please place the EBTC dataset at data/EBTC/ with subdirs "
-                "HGC/, LGC/, NST/, NTL/."
+                "Please place the EBTC dataset at data/EBTC/ with class subdirs."
             )
         for path in sorted(class_dir.glob("*.png")):
             paths.append(path)

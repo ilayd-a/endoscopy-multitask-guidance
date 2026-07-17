@@ -42,6 +42,28 @@ data/EBTC/
   NTL/*.png
 ```
 
+The public dataset can be downloaded from the Zenodo record cited by the
+Kaggle/README dataset page:
+
+```bash
+mkdir -p EndoscopicBladderTissue/dataset
+curl -L 'https://zenodo.org/records/7741476/files/baldder_tissue_classification.zip?download=1' \
+  -o EndoscopicBladderTissue/dataset/baldder_tissue_classification.zip
+unzip EndoscopicBladderTissue/dataset/baldder_tissue_classification.zip \
+  -d EndoscopicBladderTissue/dataset
+```
+
+This extracts:
+
+```text
+EndoscopicBladderTissue/dataset/baldder_tissue_classification/
+  HGC/*.png
+  LGC/*.png
+  NST/*.png
+  NTL/*.png
+  annotations.csv
+```
+
 Run classical baselines plus the 4-qubit and 6-qubit QSVM variants:
 
 ```bash
@@ -130,6 +152,38 @@ Use the team's `qml_endo` environment, or install:
 ```bash
 pip install qiskit qiskit-machine-learning qiskit-aer
 ```
+
+### README-Focused HGC vs LGC Run
+
+The endoscopy README task is high-grade vs low-grade cancer tissue, so use
+`--label_mode hgc_vs_lgc` when comparing against that project direction:
+
+```bash
+TORCH_HOME=/private/tmp/torch_home python3 EndoscopicBladderTissue/experiments/publication_benchmark_ebtc.py \
+  --data_dir EndoscopicBladderTissue/dataset/baldder_tissue_classification \
+  --label_mode hgc_vs_lgc \
+  --models classical pqk \
+  --max_samples 500 \
+  --max_test_samples 120 \
+  --train_sizes 40 80 160 240 \
+  --repeats 3 \
+  --classical_grid \
+  --qsvm_grid \
+  --no_plot
+```
+
+Best observed AUC by training-set size:
+
+| Train size | Best PQK AUC | Best classical AUC | Interpretation |
+|---:|---:|---:|---|
+| 40 | 0.852 | 0.835 | PQK leads in the lowest-label regime. |
+| 80 | 0.858 | 0.857 | PQK and RBF SVM are essentially tied. |
+| 160 | 0.907 | 0.918 | Classical RBF SVM leads with more labels. |
+| 240 | 0.900 | 0.921 | Classical RBF SVM leads with more labels. |
+
+This supports a cautious SPIE claim: projected quantum kernels are competitive
+and may be most useful for low-label HGC/LGC discrimination, but they do not
+currently beat strong classical kernels once more labeled data is available.
 
 ## Legacy Exploratory Notes
 
