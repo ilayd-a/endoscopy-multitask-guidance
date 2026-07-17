@@ -25,6 +25,7 @@ Pipeline:
 from __future__ import annotations
 
 import os
+import csv
 import numpy as np
 from pathlib import Path
 
@@ -91,6 +92,40 @@ def list_ebtc_samples(data_dir: str, label_mode: str = "cancer_vs_noncancer") ->
         raise FileNotFoundError(f"No PNG images found under {data_dir}")
 
     return paths, np.asarray(labels, dtype=int)
+
+
+def list_ebtc_samples_with_metadata(
+    data_dir: str,
+    label_mode: str = "cancer_vs_noncancer",
+) -> tuple[list[Path], np.ndarray, list[dict]]:
+    """
+    Return EBTC paths, labels, and annotation metadata.
+
+    If `annotations.csv` is present, metadata includes the official
+    `sub_dataset` split and imaging type. Missing rows fall back to
+    `sub_dataset="unknown"` so the caller can fail explicitly if needed.
+    """
+    data_dir = Path(data_dir)
+    paths, labels = list_ebtc_samples(data_dir, label_mode=label_mode)
+
+    annotations: dict[str, dict] = {}
+    annotation_path = data_dir / "annotations.csv"
+    if annotation_path.exists():
+        with annotation_path.open(newline="") as f:
+            for row in csv.DictReader(f):
+                annotations[row.get("HLY", "")] = row
+
+    metadata = []
+    for path in paths:
+        row = annotations.get(path.name, {})
+        metadata.append({
+            "filename": path.name,
+            "imaging_type": row.get("imaging type", "unknown"),
+            "tissue_type": row.get("tissue type", path.parent.name),
+            "sub_dataset": row.get("sub_dataset", "unknown"),
+        })
+
+    return paths, labels, metadata
 
 
 # ─────────────────────────────────────────────────────────

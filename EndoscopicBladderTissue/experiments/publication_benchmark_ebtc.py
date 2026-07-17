@@ -37,6 +37,7 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
     balanced_accuracy_score,
+    brier_score_loss,
     confusion_matrix,
     f1_score,
     roc_auc_score,
@@ -348,6 +349,14 @@ def missing_qml_records(model_names: list[str], exc: Exception):
         "balanced_accuracy": np.nan,
         "f1": np.nan,
         "roc_auc": np.nan,
+        "sensitivity": np.nan,
+        "specificity": np.nan,
+        "ppv": np.nan,
+        "npv": np.nan,
+        "false_negative_rate": np.nan,
+        "false_positive_rate": np.nan,
+        "brier_score": np.nan,
+        "ece_10bin": np.nan,
         "train_time_sec": np.nan,
         "confusion_matrix": None,
         "error": str(exc),
@@ -365,6 +374,45 @@ def predict_scores(model, X_test, y_pred):
     if inner is not None and hasattr(inner, "decision_function"):
         return inner.decision_function(X_test)
     return y_pred.astype(float)
+
+
+def expected_calibration_error(y_true, scores, n_bins: int = 10):
+    scores = np.asarray(scores, dtype=float)
+    y_true = np.asarray(y_true, dtype=int)
+    if len(scores) == 0 or np.any(np.isnan(scores)):
+        return np.nan
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        lo, hi = bins[i], bins[i + 1]
+        mask = (scores >= lo) & (scores <= hi if i == n_bins - 1 else scores < hi)
+        if not np.any(mask):
+            continue
+        confidence = float(np.mean(scores[mask]))
+        accuracy = float(np.mean(y_true[mask]))
+        ece += float(np.mean(mask)) * abs(confidence - accuracy)
+    return ece
+
+
+def medical_binary_metrics(y_true, y_pred, scores):
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    metrics = {
+        "sensitivity": tp / (tp + fn) if (tp + fn) else np.nan,
+        "specificity": tn / (tn + fp) if (tn + fp) else np.nan,
+        "ppv": tp / (tp + fp) if (tp + fp) else np.nan,
+        "npv": tn / (tn + fn) if (tn + fn) else np.nan,
+        "false_negative_rate": fn / (tp + fn) if (tp + fn) else np.nan,
+        "false_positive_rate": fp / (tn + fp) if (tn + fp) else np.nan,
+    }
+    try:
+        clipped = np.clip(np.asarray(scores, dtype=float), 0.0, 1.0)
+        metrics["brier_score"] = brier_score_loss(y_true, clipped)
+        metrics["ece_10bin"] = expected_calibration_error(y_true, clipped, n_bins=10)
+    except Exception:
+        metrics["brier_score"] = np.nan
+        metrics["ece_10bin"] = np.nan
+    return metrics
 
 
 def kernel_target_alignment(K, y):
@@ -406,6 +454,7 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
         scores = predict_scores(model, X_test, y_pred)
         auc = roc_auc_score(y_test, scores)
     except Exception:
+        scores = y_pred.astype(float)
         auc = float("nan")
 
     result = {
@@ -417,6 +466,7 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
         "train_time_sec": elapsed,
         "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
     }
+    result.update(medical_binary_metrics(y_test, y_pred, scores))
     result.update(model_kernel_diagnostics(model, y_train))
     return result
 
@@ -440,6 +490,14 @@ def aggregate_records(records: list[dict]):
         "balanced_accuracy",
         "f1",
         "roc_auc",
+        "sensitivity",
+        "specificity",
+        "ppv",
+        "npv",
+        "false_negative_rate",
+        "false_positive_rate",
+        "brier_score",
+        "ece_10bin",
         "train_time_sec",
         "kernel_target_alignment",
         "kernel_offdiag_mean",
@@ -453,8 +511,8 @@ def aggregate_records(records: list[dict]):
         }
         for metric in metrics:
             vals = np.asarray([
-                float(row[metric]) for row in rows
-                if row.get(metric) is not None and not np.isnan(float(row[metric]))
+                float(row.get(metric)) for row in rows
+                if row.get(metric) is not None and not np.isnan(float(row.get(metric)))
             ])
             summary[f"{metric}_mean"] = float(vals.mean()) if len(vals) else np.nan
             summary[f"{metric}_std"] = float(vals.std(ddof=1)) if len(vals) > 1 else 0.0 if len(vals) else np.nan
@@ -498,12 +556,14 @@ def plot_results(records: list[dict], save_path: Path):
 
 def load_raw_features(args):
     if args.synthetic:
-        return make_synthetic(args.max_samples, 64, args.seed)
+        X, y, ids = make_synthetic(args.max_samples, 64, args.seed)
+        return X, y, ids, None
 
-    from data_loader_ebtc import extract_resnet18_features_from_paths, list_ebtc_samples
+    from data_loader_ebtc import extract_resnet18_features_from_paths, list_ebtc_samples_with_metadata
 
-    paths, y = list_ebtc_samples(args.data_dir, label_mode=args.label_mode)
+    paths, y, sample_metadata = list_ebtc_samples_with_metadata(args.data_dir, label_mode=args.label_mode)
     ids = [str(p.relative_to(args.data_dir)) for p in paths]
+    split_labels = [row["sub_dataset"] for row in sample_metadata]
     if args.max_samples and args.max_samples < len(y):
         idx, _ = train_test_split(
             np.arange(len(y)),
@@ -514,20 +574,35 @@ def load_raw_features(args):
         paths = [paths[i] for i in idx]
         y = y[idx]
         ids = [ids[i] for i in idx]
+        split_labels = [split_labels[i] for i in idx]
 
     print(f"[data] Extracting ResNet-18 features for {len(paths)} EBTC images...")
     X_raw = extract_resnet18_features_from_paths(paths, batch_size=args.batch_size)
-    return X_raw, y, ids
+    return X_raw, y, ids, split_labels
 
 
-def run_one_split(args, X_raw, y, ids, repeat_index: int, train_limit: int):
+def run_one_split(args, X_raw, y, ids, split_labels, repeat_index: int, train_limit: int):
     split_seed = args.seed + repeat_index
-    train_idx, test_idx = train_test_split(
-        np.arange(len(y)),
-        test_size=args.test_size,
-        stratify=y,
-        random_state=split_seed,
-    )
+    if args.split_mode == "official":
+        if split_labels is None or "unknown" in set(split_labels):
+            raise ValueError("Official split mode requires annotations.csv with known sub_dataset values.")
+        split_labels_arr = np.asarray(split_labels)
+        train_mask = np.isin(split_labels_arr, args.official_train_parts)
+        test_mask = split_labels_arr == "test"
+        train_idx = np.where(train_mask)[0]
+        test_idx = np.where(test_mask)[0]
+        if len(train_idx) == 0 or len(test_idx) == 0:
+            raise ValueError(
+                f"Official split produced train={len(train_idx)} test={len(test_idx)}. "
+                f"Check --official_train_parts={args.official_train_parts}."
+            )
+    else:
+        train_idx, test_idx = train_test_split(
+            np.arange(len(y)),
+            test_size=args.test_size,
+            stratify=y,
+            random_state=split_seed,
+        )
 
     X_train_raw, X_test_raw = X_raw[train_idx], X_raw[test_idx]
     y_train, y_test = y[train_idx], y[test_idx]
@@ -550,6 +625,8 @@ def run_one_split(args, X_raw, y, ids, repeat_index: int, train_limit: int):
     metadata = {
         "repeat": repeat_index,
         "seed": split_seed,
+        "split_mode": args.split_mode,
+        "official_train_parts": args.official_train_parts if args.split_mode == "official" else None,
         "train_limit": int(train_limit),
         "train_count": int(len(y_train)),
         "test_count": int(len(y_test)),
@@ -599,6 +676,14 @@ def run_one_split(args, X_raw, y, ids, repeat_index: int, train_limit: int):
                 "balanced_accuracy": np.nan,
                 "f1": np.nan,
                 "roc_auc": np.nan,
+                "sensitivity": np.nan,
+                "specificity": np.nan,
+                "ppv": np.nan,
+                "npv": np.nan,
+                "false_negative_rate": np.nan,
+                "false_positive_rate": np.nan,
+                "brier_score": np.nan,
+                "ece_10bin": np.nan,
                 "train_time_sec": np.nan,
                 "confusion_matrix": None,
                 "error": str(exc),
@@ -635,6 +720,11 @@ def main():
     parser.add_argument("--repeats", type=int, default=1,
                         help="Number of repeated stratified splits.")
     parser.add_argument("--test_size", type=float, default=0.25)
+    parser.add_argument("--split_mode", choices=["random", "official"], default="random",
+                        help="Use repeated random stratified splits or annotations.csv train/test split.")
+    parser.add_argument("--official_train_parts", nargs="+", default=["train"],
+                        choices=["train", "val"],
+                        help="Official sub_dataset parts used for training when --split_mode official.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--balance_train", action="store_true",
@@ -649,7 +739,7 @@ def main():
                         help="Skip PNG figure generation; CSV/JSON are still saved.")
     args = parser.parse_args()
 
-    X_raw, y, ids = load_raw_features(args)
+    X_raw, y, ids, split_labels = load_raw_features(args)
     train_sizes = args.train_sizes or [args.max_train_samples]
 
     all_records = []
@@ -661,6 +751,8 @@ def main():
         "repeats": args.repeats,
         "train_sizes": train_sizes,
         "test_size": args.test_size,
+        "split_mode": args.split_mode,
+        "official_train_parts": args.official_train_parts if args.split_mode == "official" else None,
         "models_requested": args.models,
         "classical_grid": args.classical_grid,
         "qsvm_grid": args.qsvm_grid,
@@ -669,7 +761,7 @@ def main():
 
     for train_limit in train_sizes:
         for repeat_index in range(args.repeats):
-            records, split_info = run_one_split(args, X_raw, y, ids, repeat_index, train_limit)
+            records, split_info = run_one_split(args, X_raw, y, ids, split_labels, repeat_index, train_limit)
             all_records.extend(records)
             split_metadata.append(split_info)
 
@@ -685,6 +777,14 @@ def main():
         "balanced_accuracy",
         "f1",
         "roc_auc",
+        "sensitivity",
+        "specificity",
+        "ppv",
+        "npv",
+        "false_negative_rate",
+        "false_positive_rate",
+        "brier_score",
+        "ece_10bin",
         "train_time_sec",
         "confusion_matrix",
         "error",
@@ -730,6 +830,22 @@ def main():
         "f1_std",
         "roc_auc_mean",
         "roc_auc_std",
+        "sensitivity_mean",
+        "sensitivity_std",
+        "specificity_mean",
+        "specificity_std",
+        "ppv_mean",
+        "ppv_std",
+        "npv_mean",
+        "npv_std",
+        "false_negative_rate_mean",
+        "false_negative_rate_std",
+        "false_positive_rate_mean",
+        "false_positive_rate_std",
+        "brier_score_mean",
+        "brier_score_std",
+        "ece_10bin_mean",
+        "ece_10bin_std",
         "train_time_sec_mean",
         "train_time_sec_std",
         "kernel_target_alignment_mean",

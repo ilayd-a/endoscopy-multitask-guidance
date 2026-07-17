@@ -91,8 +91,10 @@ The minimum credible SPIE abstract should include:
 
 1. Leakage-controlled EBTC classification benchmark:
    - classical vs QSVM vs PQK
-   - repeated splits
+   - official `annotations.csv` train/test split as the primary result
+   - repeated random splits as a robustness check
    - low-label curves
+   - sensitivity, specificity, false-negative rate, PPV/NPV, calibration, and ROC-AUC
    - kernel diagnostics
 
 2. Endoscopy guidance candidate-ranking experiment:
@@ -112,6 +114,26 @@ The minimum credible SPIE abstract should include:
    - kernel concentration
    - threshold sensitivity
    - examples where quantum ranking helps or hurts
+
+## Scientific Validation Rule
+
+The target should not be "make the number 0.98." The target should be:
+
+> Improve a clinically meaningful endpoint on the official split and preserve that improvement
+> under repeated-split robustness checks, without degrading sensitivity or calibration.
+
+For EBTC HGC/LGC classification, the primary acceptance criteria should be:
+
+- official-split sensitivity for HGC
+- false-negative rate for HGC
+- ROC-AUC and balanced accuracy
+- Brier score and expected calibration error
+- confidence intervals or repeated-split mean +/- std
+- comparison against the best classical baseline, not only a weak baseline
+
+If quantum improves only random-split accuracy but not official-split sensitivity, calibration, or
+hard-case behavior, it should be reported as an interesting negative or limited result rather than
+a clinical improvement.
 
 ## Practical Next Steps
 

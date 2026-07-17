@@ -93,6 +93,39 @@ Outputs are written to:
 - `results/publication_benchmark/ebtc_publication_metadata.json`
 - `results/publication_benchmark/ebtc_publication_comparison.png`
 
+### Validation Standard
+
+For medical claims, do not rely on accuracy alone. The benchmark reports:
+
+- accuracy, balanced accuracy, F1, and ROC-AUC
+- sensitivity and false-negative rate for missed high-grade cases
+- specificity and false-positive rate
+- PPV and NPV
+- Brier score and 10-bin expected calibration error
+- kernel-target alignment and kernel concentration diagnostics for quantum kernels
+
+Use the official `annotations.csv` split as the primary validation and repeated
+random splits as a robustness check:
+
+```bash
+TORCH_HOME=/private/tmp/torch_home python3 EndoscopicBladderTissue/experiments/publication_benchmark_ebtc.py \
+  --data_dir EndoscopicBladderTissue/dataset/baldder_tissue_classification \
+  --label_mode hgc_vs_lgc \
+  --split_mode official \
+  --official_train_parts train \
+  --models classical pqk \
+  --train_sizes 40 80 160 240 \
+  --max_test_samples 0 \
+  --repeats 3 \
+  --classical_grid \
+  --qsvm_grid \
+  --no_plot
+```
+
+A strong SPIE claim should require improvement on clinically relevant metrics
+such as sensitivity, false-negative rate, calibration, or top-k localization,
+not only a higher single-split accuracy number.
+
 ### Recommended SPIE Experiments
 
 For publishable claims, prefer repeated splits and low-data curves over a
