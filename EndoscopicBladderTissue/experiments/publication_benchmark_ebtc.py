@@ -445,7 +445,7 @@ def model_kernel_diagnostics(model, y_train):
     return diagnostics
 
 
-def evaluate_model(name, model, X_train, y_train, X_test, y_test):
+def evaluate_model(name, model, X_train, y_train, X_test, y_test, ids_test=None):
     t0 = time.time()
     model.fit(X_train, y_train)
     elapsed = time.time() - t0
@@ -468,7 +468,16 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     }
     result.update(medical_binary_metrics(y_test, y_pred, scores))
     result.update(model_kernel_diagnostics(model, y_train))
-    return result
+    prediction_rows = []
+    if ids_test is not None:
+        for sample_id, truth, pred, score in zip(ids_test, y_test, y_pred, scores):
+            prediction_rows.append({
+                "sample_id": sample_id,
+                "y_true": int(truth),
+                "y_pred": int(pred),
+                "score": float(score),
+            })
+    return result, prediction_rows
 
 
 def write_csv(path: Path, records: list[dict], fieldnames: list[str]):
@@ -651,8 +660,14 @@ def run_one_split(args, X_raw, y, ids, split_labels, repeat_index: int, train_li
         Xtr, ytr, Xte, _ = feature_sets[6]
         for name, model in classical_models(split_seed, args.fast, args.classical_grid).items():
             print(f"[classical] {name}")
-            result = evaluate_model(name, model, Xtr, ytr, Xte, y_test)
+            result, prediction_rows = evaluate_model(name, model, Xtr, ytr, Xte, y_test, ids_test)
             records.append(result)
+            for row in prediction_rows:
+                row["model"] = name
+                row["repeat"] = repeat_index
+                row["seed"] = split_seed
+                row["train_limit"] = train_limit
+            metadata.setdefault("prediction_rows", []).extend(prediction_rows)
 
     try:
         quantum_models = qml_models(args.models, args.fast, args.qsvm_grid)
@@ -667,7 +682,14 @@ def run_one_split(args, X_raw, y, ids, split_labels, repeat_index: int, train_li
         Xtr, ytr, Xte, _ = feature_sets[n_components]
         print(f"[qml] {name}")
         try:
-            records.append(evaluate_model(name, model, Xtr, ytr, Xte, y_test))
+            result, prediction_rows = evaluate_model(name, model, Xtr, ytr, Xte, y_test, ids_test)
+            records.append(result)
+            for row in prediction_rows:
+                row["model"] = name
+                row["repeat"] = repeat_index
+                row["seed"] = split_seed
+                row["train_limit"] = train_limit
+            metadata.setdefault("prediction_rows", []).extend(prediction_rows)
         except Exception as exc:
             print(f"[qml] {name} failed: {exc}")
             records.append({
@@ -696,7 +718,8 @@ def run_one_split(args, X_raw, y, ids, split_labels, repeat_index: int, train_li
         record["train_count"] = int(len(y_train))
         record["test_count"] = int(len(y_test))
 
-    return records, metadata
+    prediction_rows = metadata.pop("prediction_rows", [])
+    return records, metadata, prediction_rows
 
 
 def main():
@@ -743,6 +766,7 @@ def main():
     train_sizes = args.train_sizes or [args.max_train_samples]
 
     all_records = []
+    all_prediction_rows = []
     split_metadata = []
     metadata = {
         "dataset": "synthetic" if args.synthetic else "EBTC",
@@ -761,11 +785,15 @@ def main():
 
     for train_limit in train_sizes:
         for repeat_index in range(args.repeats):
-            records, split_info = run_one_split(args, X_raw, y, ids, split_labels, repeat_index, train_limit)
+            records, split_info, prediction_rows = run_one_split(
+                args, X_raw, y, ids, split_labels, repeat_index, train_limit
+            )
             all_records.extend(records)
+            all_prediction_rows.extend(prediction_rows)
             split_metadata.append(split_info)
 
     metrics_path = RESULTS_DIR / "ebtc_publication_metrics.csv"
+    predictions_path = RESULTS_DIR / "ebtc_publication_predictions.csv"
     aggregate_path = RESULTS_DIR / "ebtc_publication_aggregate.csv"
     diagnostics_path = RESULTS_DIR / "ebtc_kernel_diagnostics.csv"
     metadata_path = RESULTS_DIR / "ebtc_publication_metadata.json"
@@ -799,6 +827,17 @@ def main():
         "kernel_offdiag_std",
     ]
     write_csv(metrics_path, all_records, fieldnames)
+    prediction_fields = [
+        "model",
+        "repeat",
+        "seed",
+        "train_limit",
+        "sample_id",
+        "y_true",
+        "y_pred",
+        "score",
+    ]
+    write_csv(predictions_path, all_prediction_rows, prediction_fields)
     diagnostic_records = [
         record for record in all_records
         if record.get("kernel_target_alignment") is not None
@@ -863,6 +902,7 @@ def main():
         plot_results(all_records, figure_path)
 
     print(f"[results] metrics: {metrics_path}")
+    print(f"[results] predictions: {predictions_path}")
     print(f"[results] aggregate: {aggregate_path}")
     print(f"[results] diagnostics: {diagnostics_path}")
     print(f"[results] metadata: {metadata_path}")
