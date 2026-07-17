@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import pickle
 import sys
 import time
 from pathlib import Path
@@ -98,26 +99,61 @@ def prompt_box(point_yx: tuple[int, int], shape: tuple[int, int], radius: int) -
     ], dtype=np.float32)
 
 
-def sam_prompt_mask(
+def set_cached_or_compute_image(predictor, image: np.ndarray, sample_id: str, cache_dir: Path | None):
+    cache_path = cache_dir / f"{sample_id}_sam_embedding.pt" if cache_dir is not None else None
+    if cache_path is not None and cache_path.exists():
+        payload = torch.load(cache_path, map_location=predictor.device)
+        predictor.reset_image()
+        predictor.original_size = tuple(payload["original_size"])
+        predictor.input_size = tuple(payload["input_size"])
+        predictor.features = payload["features"].to(predictor.device)
+        predictor.is_image_set = True
+        return
+
+    predictor.set_image(image)
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            "original_size": tuple(predictor.original_size),
+            "input_size": tuple(predictor.input_size),
+            "features": predictor.get_image_embedding().detach().cpu(),
+        }, cache_path)
+
+
+def sam_prompt_batch(
     predictor,
-    image: np.ndarray,
-    point_yx: tuple[int, int],
+    point_yxs: list[tuple[int, int]],
+    image_shape: tuple[int, int],
     prompt_mode: str,
     box_radius: int,
-) -> tuple[np.ndarray, float]:
-    predictor.set_image(image)
-    y, x = point_yx
-    point_coords = np.asarray([[x, y]], dtype=np.float32) if prompt_mode in {"point", "point_box"} else None
-    point_labels = np.asarray([1], dtype=np.int32) if point_coords is not None else None
-    box = prompt_box(point_yx, image.shape[:2], box_radius) if prompt_mode in {"box", "point_box"} else None
-    masks, scores, _ = predictor.predict(
+) -> tuple[np.ndarray, float, tuple[int, int]]:
+    device = predictor.device
+    point_coords = None
+    point_labels = None
+    boxes = None
+    if prompt_mode in {"point", "point_box"}:
+        coords = np.asarray([[[x, y]] for y, x in point_yxs], dtype=np.float32)
+        coords = predictor.transform.apply_coords(coords, image_shape)
+        point_coords = torch.as_tensor(coords, dtype=torch.float32, device=device)
+        point_labels = torch.ones((len(point_yxs), 1), dtype=torch.int, device=device)
+    if prompt_mode in {"box", "point_box"}:
+        box_arr = np.asarray([prompt_box(point, image_shape, box_radius) for point in point_yxs], dtype=np.float32)
+        box_arr = predictor.transform.apply_boxes(box_arr, image_shape)
+        boxes = torch.as_tensor(box_arr, dtype=torch.float32, device=device)
+
+    masks, scores, _ = predictor.predict_torch(
         point_coords=point_coords,
         point_labels=point_labels,
-        box=box,
+        boxes=boxes,
         multimask_output=True,
+        return_logits=False,
     )
-    best = int(np.argmax(scores))
-    return masks[best].astype(bool), float(scores[best])
+    flat = scores.reshape(-1)
+    best_flat = int(torch.argmax(flat).item())
+    prompt_idx = best_flat // scores.shape[1]
+    mask_idx = best_flat % scores.shape[1]
+    mask = masks[prompt_idx, mask_idx].detach().cpu().numpy().astype(bool)
+    return mask, float(scores[prompt_idx, mask_idx].item()), point_yxs[prompt_idx]
 
 
 def heatmap_baseline(data_dir: Path, sample_id: str, threshold: float) -> np.ndarray:
@@ -132,6 +168,21 @@ def ranked_points(sample_rows: pd.DataFrame, scores: np.ndarray, top_k: int) -> 
         row = sample_rows.iloc[int(idx)]
         out.append((int(row.y), int(row.x)))
     return out
+
+
+def normalize_scores(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    lo = float(np.nanmin(values))
+    hi = float(np.nanmax(values))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return np.zeros_like(values, dtype=float)
+    return (values - lo) / (hi - lo)
+
+
+def hybrid_scores(sample_rows: pd.DataFrame, model_scores: np.ndarray, alpha: float) -> np.ndarray:
+    model_norm = normalize_scores(model_scores)
+    heatmap_norm = normalize_scores(sample_rows["heatmap_score"].to_numpy(dtype=float))
+    return alpha * model_norm + (1.0 - alpha) * heatmap_norm
 
 
 def oracle_point(sample_rows: pd.DataFrame) -> tuple[int, int]:
@@ -151,6 +202,8 @@ def evaluate_prompt_strategy(
     name: str,
     prompt_mode: str,
     box_radius: int,
+    cache_dir: Path | None,
+    quiet: bool,
 ):
     rows = []
     for sid in sample_ids:
@@ -158,11 +211,14 @@ def evaluate_prompt_strategy(
         gt = np.load(data_dir / f"gt_mask_{sid}.npy")
         t0 = time.time()
         candidates = points_by_sample[sid]
-        masks = []
-        for point in candidates:
-            mask, sam_score = sam_prompt_mask(predictor, image, point, prompt_mode, box_radius)
-            masks.append((mask, sam_score, point))
-        mask, sam_score, point_yx = max(masks, key=lambda item: item[1])
+        set_cached_or_compute_image(predictor, image, sid, cache_dir)
+        mask, sam_score, point_yx = sam_prompt_batch(
+            predictor,
+            candidates,
+            image.shape[:2],
+            prompt_mode=prompt_mode,
+            box_radius=box_radius,
+        )
         elapsed = time.time() - t0
         dice, iou = dice_iou(mask, gt)
         y, x = point_yx
@@ -177,7 +233,8 @@ def evaluate_prompt_strategy(
             "prompt_hit": int(gt[y, x] > 0),
             "elapsed_sec": elapsed,
         })
-        print(f"[sam] {name} {sid} dice={dice:.3f} hit={int(gt[y, x] > 0)}")
+        if not quiet:
+            print(f"[sam] {name} {sid} dice={dice:.3f} hit={int(gt[y, x] > 0)}")
     return rows
 
 
@@ -188,6 +245,8 @@ def main():
     parser.add_argument("--checkpoint", default="models/sam_vit_b_01ec64.pth")
     parser.add_argument("--model_type", default="vit_b")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/sam_quantum_prompt_benchmark.csv")
+    parser.add_argument("--candidate_cache", default="endoscopy_guidance/results/sam_prompt_candidate_cache.pkl")
+    parser.add_argument("--sam_embedding_cache_dir", default="endoscopy_guidance/results/sam_embedding_cache_vit_b")
     parser.add_argument("--grid_stride", type=int, default=32)
     parser.add_argument("--top_n", type=int, default=20)
     parser.add_argument("--nms_dist", type=int, default=24)
@@ -195,6 +254,7 @@ def main():
     parser.add_argument("--n_components", type=int, default=6)
     parser.add_argument("--train_candidate_limit", type=int, default=600)
     parser.add_argument("--max_test_samples", type=int, default=12)
+    parser.add_argument("--eval_split", choices=["val", "test"], default="test")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--baseline_threshold", type=float, default=0.3)
@@ -203,26 +263,56 @@ def main():
     parser.add_argument("--sam_top_k", type=int, default=1)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--pqk_c", type=float, default=1.0)
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--rank_blend_alpha", type=float, default=1.0, help="1=model score only, 0=heatmap score only")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
     sequence_map = load_sequence_map(Path(args.endoscopy_repo))
-    X, y, rows = build_candidates(
-        data_dir=data_dir,
-        top_n=args.top_n,
-        grid_stride=args.grid_stride,
-        nms_dist=args.nms_dist,
-        radius=args.patch_radius,
-        use_image_features=True,
-    )
+    cache_path = Path(args.candidate_cache) if args.candidate_cache else None
+    cache_key = {
+        "data_dir": str(data_dir.resolve()),
+        "top_n": args.top_n,
+        "grid_stride": args.grid_stride,
+        "nms_dist": args.nms_dist,
+        "patch_radius": args.patch_radius,
+        "use_image_features": True,
+    }
+    if cache_path is not None and cache_path.exists():
+        payload = pickle.loads(cache_path.read_bytes())
+        if payload.get("cache_key") == cache_key:
+            X, y, rows = payload["X"], payload["y"], payload["rows"]
+            print(f"[cache] loaded candidates from {cache_path}")
+        else:
+            X, y, rows = None, None, None
+    else:
+        X, y, rows = None, None, None
+    if X is None:
+        X, y, rows = build_candidates(
+            data_dir=data_dir,
+            top_n=args.top_n,
+            grid_stride=args.grid_stride,
+            nms_dist=args.nms_dist,
+            radius=args.patch_radius,
+            use_image_features=True,
+        )
+        if cache_path is not None:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_bytes(pickle.dumps({"cache_key": cache_key, "X": X, "y": y, "rows": rows}))
+            print(f"[cache] saved candidates to {cache_path}")
     df = row_dataframe(rows, data_dir / "export_summary.csv", sequence_map)
-    train_idx = df.index[df["sequence_id"] <= 26].to_numpy()
-    test_sample_ids = sorted(df.loc[df["split"].eq("test"), "sample_id"].unique())
+    if args.eval_split == "val":
+        train_idx = df.index[df["sequence_id"] <= 23].to_numpy()
+        eval_mask = df["split"].eq("val")
+    else:
+        train_idx = df.index[df["sequence_id"] <= 26].to_numpy()
+        eval_mask = df["split"].eq("test")
+    eval_sample_ids = sorted(df.loc[eval_mask, "sample_id"].unique())
     if args.max_test_samples > 0:
-        test_sample_ids = test_sample_ids[: args.max_test_samples]
-    test_idx = df.index[df["sample_id"].isin(test_sample_ids)].to_numpy()
+        eval_sample_ids = eval_sample_ids[: args.max_test_samples]
+    test_idx = df.index[df["sample_id"].isin(eval_sample_ids)].to_numpy()
     train_idx = limit_training_candidates(train_idx, y, args.train_candidate_limit, args.seed)
-    print(f"[data] candidates={len(y)} train={len(train_idx)} test_candidates={len(test_idx)} test_samples={len(test_sample_ids)}")
+    print(f"[data] candidates={len(y)} train={len(train_idx)} eval_candidates={len(test_idx)} eval_samples={len(eval_sample_ids)} eval_split={args.eval_split}")
 
     classical = ExtraTreesClassifier(n_estimators=300, class_weight="balanced", random_state=args.seed)
     classical.fit(X[train_idx], y[train_idx])
@@ -236,9 +326,11 @@ def main():
 
     rng = np.random.default_rng(args.seed)
     test_df = df.loc[test_idx].copy().reset_index(drop=True)
-    pqk_name = f"pqk_reps{args.pqk_reps}_C{args.pqk_c:g}"
-    point_maps = {"heatmap_peak": {}, "random_candidate": {}, "classical_extratrees": {}, pqk_name: {}, "oracle_candidate": {}}
-    for sid in test_sample_ids:
+    blend_suffix = "" if args.rank_blend_alpha >= 0.999 else f"_blend{args.rank_blend_alpha:g}"
+    pqk_name = f"pqk_reps{args.pqk_reps}_C{args.pqk_c:g}{blend_suffix}"
+    classical_name = f"classical_extratrees{blend_suffix}"
+    point_maps = {"heatmap_peak": {}, "random_candidate": {}, classical_name: {}, pqk_name: {}, "oracle_candidate": {}}
+    for sid in eval_sample_ids:
         sample_mask = test_df["sample_id"].eq(sid).to_numpy()
         sample_rows = test_df[sample_mask].reset_index(drop=True)
         heatmap = np.load(data_dir / f"pred_heatmap_{sid}.npy")
@@ -247,15 +339,18 @@ def main():
         random_rows = sample_rows.iloc[rng.choice(len(sample_rows), size=max(1, args.sam_top_k), replace=False)]
         point_maps["random_candidate"][sid] = [(int(row.y), int(row.x)) for row in random_rows.itertuples(index=False)]
         point_maps["oracle_candidate"][sid] = [oracle_point(sample_rows)]
-        point_maps["classical_extratrees"][sid] = ranked_points(sample_rows, classical_scores[sample_mask], args.sam_top_k)
-        point_maps[pqk_name][sid] = ranked_points(sample_rows, pqk_scores[sample_mask], args.sam_top_k)
+        classical_rank_scores = hybrid_scores(sample_rows, classical_scores[sample_mask], args.rank_blend_alpha)
+        pqk_rank_scores = hybrid_scores(sample_rows, pqk_scores[sample_mask], args.rank_blend_alpha)
+        point_maps[classical_name][sid] = ranked_points(sample_rows, classical_rank_scores, args.sam_top_k)
+        point_maps[pqk_name][sid] = ranked_points(sample_rows, pqk_rank_scores, args.sam_top_k)
 
     device = choose_device(args.device)
     print(f"[sam] loading {args.model_type} on {device}")
     predictor = load_sam_predictor(Path(args.checkpoint), args.model_type, device)
+    embedding_cache = Path(args.sam_embedding_cache_dir) if args.sam_embedding_cache_dir else None
 
     out_rows = []
-    for sid in test_sample_ids:
+    for sid in eval_sample_ids:
         gt = np.load(data_dir / f"gt_mask_{sid}.npy")
         base = heatmap_baseline(data_dir, sid, args.baseline_threshold)
         dice, iou = dice_iou(base, gt)
@@ -275,11 +370,13 @@ def main():
         out_rows.extend(evaluate_prompt_strategy(
             predictor,
             data_dir,
-            test_sample_ids,
+            eval_sample_ids,
             points,
             name,
             prompt_mode=args.prompt_mode,
             box_radius=args.box_radius,
+            cache_dir=embedding_cache,
+            quiet=args.quiet,
         ))
 
     output_csv = Path(args.output_csv)
