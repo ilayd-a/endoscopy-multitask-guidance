@@ -62,8 +62,44 @@ python experiments/publication_benchmark_ebtc.py \
 Outputs are written to:
 
 - `results/publication_benchmark/ebtc_publication_metrics.csv`
+- `results/publication_benchmark/ebtc_publication_aggregate.csv`
 - `results/publication_benchmark/ebtc_publication_metadata.json`
 - `results/publication_benchmark/ebtc_publication_comparison.png`
+
+### Recommended SPIE Experiments
+
+For publishable claims, prefer repeated splits and low-data curves over a
+single train/test split. This reports mean and standard deviation by model and
+training-set size:
+
+```bash
+python experiments/publication_benchmark_ebtc.py \
+  --data_dir data/EBTC \
+  --models classical qsvm_v1 qsvm_v2 \
+  --max_samples 300 \
+  --max_test_samples 80 \
+  --train_sizes 20 40 80 120 \
+  --repeats 5 \
+  --classical_grid \
+  --qsvm_grid \
+  --no_plot
+```
+
+Use the aggregate CSV to identify the strongest setting:
+
+```text
+results/publication_benchmark/ebtc_publication_aggregate.csv
+```
+
+Suggested reporting table columns:
+
+- model
+- training-set size
+- accuracy mean +/- std
+- balanced accuracy mean +/- std
+- F1 mean +/- std
+- ROC-AUC mean +/- std
+- training time mean +/- std
 
 If Qiskit is not installed in the active Python environment, the script records
 the missing dependency in the metrics CSV instead of failing the whole run.
