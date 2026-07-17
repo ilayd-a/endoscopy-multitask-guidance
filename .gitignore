@@ -25,7 +25,9 @@ __pycache__/
 kidney_stone/
 qml_kidney_stone/images/
 qml_kidney_stone/training_data/*.jpg
+qml_kidney_stone/training_data/*.json
 qml_kidney_stone/results/*.png
+qml_kidney_stone/results/*.csv
 qml_kidney_stone/__pycache__/
 
 EndoscopicBladderTissue/dataset/
