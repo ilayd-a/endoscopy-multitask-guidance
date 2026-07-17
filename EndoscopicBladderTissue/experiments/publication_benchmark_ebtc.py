@@ -204,6 +204,89 @@ def qml_models(model_names: list[str], fast: bool, qsvm_grid: bool = False):
     return out
 
 
+class QuantumKernelSVC:
+    def __init__(self, kernel, C: float = 1.0):
+        self.kernel = kernel
+        self.model = SVC(kernel="precomputed", C=C, probability=True)
+        self.X_train = None
+
+    def fit(self, X, y):
+        self.X_train = X
+        self.K_train = self.kernel.evaluate(x_vec=X)
+        self.model.fit(self.K_train, y)
+        return self
+
+    def predict(self, X):
+        return self.model.predict(self.kernel.evaluate(x_vec=X, y_vec=self.X_train))
+
+    def predict_proba(self, X):
+        return self.model.predict_proba(self.kernel.evaluate(x_vec=X, y_vec=self.X_train))
+
+
+class ProjectedQuantumKernelSVC:
+    """
+    Local-observable projected quantum kernel approximation.
+
+    Instead of using pairwise state fidelities directly, this maps each sample
+    into low-dimensional trigonometric features inspired by single-qubit
+    expectation values after angle encoding, then applies an RBF kernel.
+    This is a simulator-light proxy for projected quantum kernels and gives a
+    concrete baseline for the "avoid kernel concentration" research question.
+    """
+
+    def __init__(self, gamma="scale", C: float = 1.0, reps: int = 1):
+        self.gamma = gamma
+        self.reps = reps
+        self.model = SVC(kernel="precomputed", C=C, probability=True)
+
+    def _project(self, X):
+        features = [np.cos(X), np.sin(X)]
+        if self.reps >= 2:
+            features.extend([np.cos(2 * X), np.sin(2 * X)])
+        if self.reps >= 3:
+            features.extend([np.cos(3 * X), np.sin(3 * X)])
+        return np.concatenate(features, axis=1)
+
+    def _gamma_value(self, Z):
+        if self.gamma == "scale":
+            var = float(np.var(Z))
+            return 1.0 / (Z.shape[1] * var) if var > 0 else 1.0
+        if self.gamma == "auto":
+            return 1.0 / Z.shape[1]
+        return float(self.gamma)
+
+    def _kernel(self, A, B):
+        AA = np.sum(A * A, axis=1)[:, None]
+        BB = np.sum(B * B, axis=1)[None, :]
+        dist2 = np.maximum(AA + BB - 2 * A @ B.T, 0)
+        return np.exp(-self.gamma_ * dist2)
+
+    def fit(self, X, y):
+        self.Z_train = self._project(X)
+        self.gamma_ = self._gamma_value(self.Z_train)
+        self.K_train = self._kernel(self.Z_train, self.Z_train)
+        self.model.fit(self.K_train, y)
+        return self
+
+    def predict(self, X):
+        return self.model.predict(self._kernel(self._project(X), self.Z_train))
+
+    def predict_proba(self, X):
+        return self.model.predict_proba(self._kernel(self._project(X), self.Z_train))
+
+
+def pqk_models(model_names: list[str], qsvm_grid: bool = False):
+    out = {}
+    if "pqk" not in model_names:
+        return out
+    reps_list = [1, 2, 3] if qsvm_grid else [2]
+    for reps in reps_list:
+        out[f"QML_PQK_6q_reps{reps}_gammaScale"] = ProjectedQuantumKernelSVC(
+            gamma="scale", reps=reps
+        )
+    return out
+
+
 def build_qsvm_classifier(n_qubits: int, version: str, reps: int):
     """
     Build QSVM without importing the repo's Torch-dependent model modules.
@@ -238,7 +321,7 @@ def build_qsvm_classifier(n_qubits: int, version: str, reps: int):
 
     fidelity = ComputeUncompute(sampler=sampler)
     kernel = FidelityQuantumKernel(fidelity=fidelity, feature_map=feature_map)
-    return QSVC(quantum_kernel=kernel)
+    return QuantumKernelSVC(kernel)
 
 
 def missing_qml_records(model_names: list[str], exc: Exception):
@@ -283,6 +366,36 @@ def predict_scores(model, X_test, y_pred):
     return y_pred.astype(float)
 
 
+def kernel_target_alignment(K, y):
+    y_pm = np.where(np.asarray(y) > 0, 1.0, -1.0)
+    yy = np.outer(y_pm, y_pm)
+    denom = np.linalg.norm(K, "fro") * np.linalg.norm(yy, "fro")
+    return float(np.sum(K * yy) / denom) if denom > 0 else np.nan
+
+
+def kernel_concentration(K):
+    K = np.asarray(K, dtype=float)
+    mask = ~np.eye(K.shape[0], dtype=bool)
+    off_diag = K[mask]
+    return {
+        "kernel_diag_mean": float(np.mean(np.diag(K))),
+        "kernel_offdiag_mean": float(np.mean(off_diag)) if off_diag.size else np.nan,
+        "kernel_offdiag_std": float(np.std(off_diag)) if off_diag.size else np.nan,
+    }
+
+
+def model_kernel_diagnostics(model, y_train):
+    K = getattr(model, "K_train", None)
+    if K is None:
+        inner = getattr(model, "model", None)
+        K = getattr(inner, "K_train", None)
+    if K is None:
+        return {}
+    diagnostics = kernel_concentration(K)
+    diagnostics["kernel_target_alignment"] = kernel_target_alignment(K, y_train)
+    return diagnostics
+
+
 def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     t0 = time.time()
     model.fit(X_train, y_train)
@@ -294,7 +407,7 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     except Exception:
         auc = float("nan")
 
-    return {
+    result = {
         "model": name,
         "accuracy": accuracy_score(y_test, y_pred),
         "balanced_accuracy": balanced_accuracy_score(y_test, y_pred),
@@ -303,6 +416,8 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
         "train_time_sec": elapsed,
         "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
     }
+    result.update(model_kernel_diagnostics(model, y_train))
+    return result
 
 
 def write_csv(path: Path, records: list[dict], fieldnames: list[str]):
@@ -319,7 +434,16 @@ def aggregate_records(records: list[dict]):
         grouped.setdefault(key, []).append(record)
 
     aggregate = []
-    metrics = ["accuracy", "balanced_accuracy", "f1", "roc_auc", "train_time_sec"]
+    metrics = [
+        "accuracy",
+        "balanced_accuracy",
+        "f1",
+        "roc_auc",
+        "train_time_sec",
+        "kernel_target_alignment",
+        "kernel_offdiag_mean",
+        "kernel_offdiag_std",
+    ]
     for (train_limit, model), rows in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
         summary = {
             "train_limit": train_limit,
@@ -454,6 +578,7 @@ def run_one_split(args, X_raw, y, ids, repeat_index: int, train_limit: int):
 
     try:
         quantum_models = qml_models(args.models, args.fast, args.qsvm_grid)
+        quantum_models.update(pqk_models(args.models, args.qsvm_grid))
     except ModuleNotFoundError as exc:
         print(f"[qml] QML dependencies unavailable: {exc}")
         records.extend(missing_qml_records(args.models, exc))
@@ -492,7 +617,7 @@ def main():
     parser = argparse.ArgumentParser(description="Leakage-controlled EBTC publication benchmark")
     parser.add_argument("--data_dir", default=str(ROOT / "data" / "EBTC"))
     parser.add_argument("--models", nargs="+", default=["classical", "qsvm_v1", "qsvm_v2"],
-                        choices=["classical", "qsvm_v1", "qsvm_v2", "all_qml"])
+                        choices=["classical", "qsvm_v1", "qsvm_v2", "pqk", "all_qml"])
     parser.add_argument("--max_samples", type=int, default=300)
     parser.add_argument("--max_train_samples", type=int, default=120,
                         help="Training subset limit after split; set 0 to use all.")
@@ -542,6 +667,7 @@ def main():
 
     metrics_path = RESULTS_DIR / "ebtc_publication_metrics.csv"
     aggregate_path = RESULTS_DIR / "ebtc_publication_aggregate.csv"
+    diagnostics_path = RESULTS_DIR / "ebtc_kernel_diagnostics.csv"
     metadata_path = RESULTS_DIR / "ebtc_publication_metadata.json"
     figure_path = RESULTS_DIR / "ebtc_publication_comparison.png"
 
@@ -559,8 +685,30 @@ def main():
         "train_limit",
         "train_count",
         "test_count",
+        "kernel_target_alignment",
+        "kernel_diag_mean",
+        "kernel_offdiag_mean",
+        "kernel_offdiag_std",
     ]
     write_csv(metrics_path, all_records, fieldnames)
+    diagnostic_records = [
+        record for record in all_records
+        if record.get("kernel_target_alignment") is not None
+        and not np.isnan(float(record.get("kernel_target_alignment")))
+    ]
+    diagnostic_fields = [
+        "model",
+        "repeat",
+        "seed",
+        "train_limit",
+        "kernel_target_alignment",
+        "kernel_diag_mean",
+        "kernel_offdiag_mean",
+        "kernel_offdiag_std",
+        "accuracy",
+        "roc_auc",
+    ]
+    write_csv(diagnostics_path, diagnostic_records, diagnostic_fields)
     aggregate = aggregate_records(all_records)
     aggregate_fields = [
         "train_limit",
@@ -576,6 +724,12 @@ def main():
         "roc_auc_std",
         "train_time_sec_mean",
         "train_time_sec_std",
+        "kernel_target_alignment_mean",
+        "kernel_target_alignment_std",
+        "kernel_offdiag_mean_mean",
+        "kernel_offdiag_mean_std",
+        "kernel_offdiag_std_mean",
+        "kernel_offdiag_std_std",
     ]
     write_csv(aggregate_path, aggregate, aggregate_fields)
     metadata["splits"] = split_metadata
@@ -586,6 +740,7 @@ def main():
 
     print(f"[results] metrics: {metrics_path}")
     print(f"[results] aggregate: {aggregate_path}")
+    print(f"[results] diagnostics: {diagnostics_path}")
     print(f"[results] metadata: {metadata_path}")
     if not args.no_plot:
         print(f"[results] figure: {figure_path}")

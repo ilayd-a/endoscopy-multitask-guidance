@@ -13,6 +13,10 @@ for reporting. It fixes the main evaluation risks in the exploratory scripts:
 - `StandardScaler`, `PCA`, and `MinMaxScaler` are fit on the training split only
 - optional class balancing is applied to the training split only
 - classical baselines are evaluated on the same low-dimensional feature space
+- quantum kernels are scored with kernel-target alignment and concentration
+  diagnostics
+- a projected-kernel SVM (`pqk`) is included as a lightweight test of whether
+  local-observable/projected kernels avoid plain fidelity-kernel failure modes
 - outputs include CSV metrics, JSON metadata with split/sample IDs, and an
   optional comparison figure
 
@@ -63,6 +67,7 @@ Outputs are written to:
 
 - `results/publication_benchmark/ebtc_publication_metrics.csv`
 - `results/publication_benchmark/ebtc_publication_aggregate.csv`
+- `results/publication_benchmark/ebtc_kernel_diagnostics.csv`
 - `results/publication_benchmark/ebtc_publication_metadata.json`
 - `results/publication_benchmark/ebtc_publication_comparison.png`
 
@@ -75,7 +80,7 @@ training-set size:
 ```bash
 python experiments/publication_benchmark_ebtc.py \
   --data_dir data/EBTC \
-  --models classical qsvm_v1 qsvm_v2 \
+  --models classical qsvm_v1 qsvm_v2 pqk \
   --max_samples 300 \
   --max_test_samples 80 \
   --train_sizes 20 40 80 120 \
@@ -100,6 +105,23 @@ Suggested reporting table columns:
 - F1 mean +/- std
 - ROC-AUC mean +/- std
 - training time mean +/- std
+
+Suggested kernel-diagnostics table columns:
+
+- model
+- training-set size
+- kernel-target alignment mean +/- std
+- off-diagonal kernel mean +/- std
+- off-diagonal kernel standard deviation mean +/- std
+
+Interpretation:
+
+- Higher kernel-target alignment usually indicates a kernel more compatible
+  with the class labels.
+- Very high off-diagonal mean with very low off-diagonal standard deviation can
+  indicate kernel concentration, where most samples look too similar.
+- Very low off-diagonal mean can indicate near-identity behavior, where the
+  model may memorize but generalize poorly.
 
 If Qiskit is not installed in the active Python environment, the script records
 the missing dependency in the metrics CSV instead of failing the whole run.
