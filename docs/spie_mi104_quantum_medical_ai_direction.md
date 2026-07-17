@@ -353,3 +353,76 @@ This becomes abstract-worthy if at least one of these holds:
 
 If none of these hold, the publication should be reframed as a rigorous negative benchmark rather
 than an intervention method paper.
+
+## Low-Label Candidate-Ranking Sweep
+
+The candidate-ranking benchmark now supports repeated balanced low-label candidate subsampling
+through `--train_candidate_sizes` and `--repeats`. This tests whether projected quantum kernels
+are more useful when only a small number of candidate annotations are available.
+
+Low-label sweep command:
+
+```bash
+python3 endoscopy_guidance/candidate_ranking_benchmark.py \
+  --data_dir endoscopy_guidance/exports/cvc_test_rgb \
+  --results_csv endoscopy_guidance/results/cvc_test_rgb_lowlabel_metrics.csv \
+  --aggregate_csv endoscopy_guidance/results/cvc_test_rgb_lowlabel_aggregate.csv \
+  --candidates_csv endoscopy_guidance/results/cvc_test_rgb_lowlabel_candidates.csv \
+  --top_n 8 \
+  --grid_stride 48 \
+  --nms_dist 20 \
+  --patch_radius 14 \
+  --sample_folds 5 \
+  --train_candidate_sizes 40 80 160 320 0 \
+  --repeats 3 \
+  --image_features \
+  --refine_alpha 0 \
+  --refine_sigma 20 \
+  --refine_top_k 5
+```
+
+Summary of the best classical model and best PQK model at each training-candidate budget:
+
+| Training candidates | Baseline top-5 | Best classical top-5 | Best PQK top-5 | Baseline Dice | Best classical Dice | Best PQK Dice | Best classical peak distance | Best PQK peak distance |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 40 | 0.256 | 0.565 | 0.494 | 0.076 | 0.194 | 0.162 | 61.6 px | 65.8 px |
+| 80 | 0.256 | 0.607 | 0.575 | 0.076 | 0.203 | 0.202 | 60.3 px | 61.0 px |
+| 160 | 0.256 | 0.651 | 0.600 | 0.076 | 0.228 | 0.221 | 58.3 px | 58.4 px |
+| 320 | 0.256 | 0.636 | 0.616 | 0.076 | 0.229 | 0.234 | 58.6 px | 57.0 px |
+| all | 0.256 | 0.652 | 0.697 | 0.076 | 0.274 | 0.265 | 53.7 px | 54.0 px |
+
+Interpretation:
+
+- The low-label result does not support a simple claim that PQK beats strong classical rerankers
+  with very few annotations. Classical ensembles are still stronger at 40-160 candidates.
+- The result does support the image-guidance pivot: all learned rerankers, including PQK, strongly
+  improve over the degraded heatmap baseline.
+- PQK becomes competitive at 320 candidates, where it slightly improves refined Dice and peak
+  distance over the best classical model.
+- With all available candidates, PQK gives the strongest top-5 localization hit rate
+  (0.697 vs 0.652 classical), which is clinically relevant if the guidance system presents a
+  shortlist of target hypotheses rather than a single hard point.
+- The best SPIE claim is therefore not "quantum improves low-label diagnosis." It is:
+
+> A projected quantum-kernel reranker can convert a weak endoscopic heatmap into a substantially
+> improved target-candidate guidance signal, remaining competitive with strong classical rerankers
+> and improving top-k target recovery in a sequence-held-out setting.
+
+## Stronger Next Experiment
+
+To make this more publishable, the next experiment should evaluate a hybrid decision rule rather
+than asking PQK to replace the best classical reranker:
+
+1. Use a classical model to generate high-recall candidate proposals.
+2. Use PQK only as a second-stage diversity or uncertainty reranker among the top candidates.
+3. Optimize for top-k clinical safety metrics:
+   - target present in top 3 or top 5 candidates
+   - false-negative rate of candidate shortlist
+   - peak-center distance
+   - refined Dice/IoU
+   - calibration of candidate confidence
+4. Compare against classical-only two-stage rerankers using the same candidate budget.
+
+This direction fits MI104 better because it matches an intervention workflow: a system can surface
+several plausible target regions for robotic or image-guided assistance, while preserving a strong
+classical baseline and using QML only where it has a plausible narrow role.

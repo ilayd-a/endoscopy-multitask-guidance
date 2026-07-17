@@ -473,6 +473,38 @@ def sample_folds(sample_ids: np.ndarray, n_folds: int):
         yield f"fold_{fold_idx + 1:02d}", held_out
 
 
+def limit_training_candidates(
+    train_idx: np.ndarray,
+    y: np.ndarray,
+    max_train_candidates: int,
+    seed: int,
+) -> np.ndarray:
+    if max_train_candidates <= 0 or max_train_candidates >= len(train_idx):
+        return train_idx
+
+    rng = np.random.default_rng(seed)
+    y_train = y[train_idx]
+    positive = train_idx[y_train == 1]
+    negative = train_idx[y_train == 0]
+    if len(positive) == 0 or len(negative) == 0:
+        return rng.choice(train_idx, size=min(max_train_candidates, len(train_idx)), replace=False)
+
+    per_class = max_train_candidates // 2
+    pos_n = min(per_class, len(positive))
+    neg_n = min(max_train_candidates - pos_n, len(negative))
+    selected = np.concatenate([
+        rng.choice(positive, size=pos_n, replace=False),
+        rng.choice(negative, size=neg_n, replace=False),
+    ])
+    if len(selected) < max_train_candidates:
+        remaining = np.setdiff1d(train_idx, selected, assume_unique=False)
+        extra_n = min(max_train_candidates - len(selected), len(remaining))
+        if extra_n:
+            selected = np.concatenate([selected, rng.choice(remaining, size=extra_n, replace=False)])
+    rng.shuffle(selected)
+    return selected
+
+
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
@@ -512,11 +544,19 @@ def aggregate_metric_rows(rows: list[dict]) -> list[dict]:
     ]
     grouped = defaultdict(list)
     for row in rows:
-        grouped[row["model"]].append(row)
+        key = (row.get("train_candidate_limit", "all"), row["model"])
+        grouped[key].append(row)
 
     aggregate_rows = []
-    for model_name, model_rows in sorted(grouped.items()):
-        out = {"model": model_name, "folds": len(model_rows)}
+    for (train_candidate_limit, model_name), model_rows in sorted(
+        grouped.items(),
+        key=lambda item: (str(item[0][0]), item[0][1]),
+    ):
+        out = {
+            "train_candidate_limit": train_candidate_limit,
+            "model": model_name,
+            "folds": len(model_rows),
+        }
         for field in numeric_fields:
             values = []
             for row in model_rows:
@@ -558,6 +598,18 @@ def main():
         default=0,
         help="Use grouped k-fold over sample IDs. Default 0 means leave-one-sample-out.",
     )
+    parser.add_argument(
+        "--train_candidate_sizes",
+        nargs="*",
+        type=int,
+        help="Optional low-label candidate counts. Use 0 for all available training candidates.",
+    )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help="Repeated balanced candidate subsamples for each train candidate size.",
+    )
     parser.add_argument("--refine_alpha", type=float, default=0.35, help="Blend weight for original heatmap.")
     parser.add_argument("--refine_sigma", type=float, default=12.0, help="Gaussian sigma for candidate score blobs.")
     parser.add_argument("--refine_top_k", type=int, default=5, help="Number of ranked candidates used for refinement.")
@@ -582,75 +634,95 @@ def main():
 
     baseline_rows = []
     metric_rows = []
+    train_candidate_sizes = args.train_candidate_sizes or [0]
     for fold_name, held_out_ids in sample_folds(sample_ids, args.sample_folds):
         test_mask = np.isin(sample_ids, held_out_ids)
-        train_idx = np.where(~test_mask)[0]
+        full_train_idx = np.where(~test_mask)[0]
         test_idx = np.where(test_mask)[0]
-        X_train_raw, X_test_raw = X_raw[train_idx], X_raw[test_idx]
-        y_train, y_test = y[train_idx], y[test_idx]
         test_rows = [candidate_rows[i] for i in test_idx]
-        if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+        if len(np.unique(y[test_idx])) < 2:
             print(f"[skip] {fold_name}: train/test split lacks both classes")
             continue
 
-        X_train, X_test, prep = fit_low_dim(X_train_raw, X_test_raw, args.n_components, args.seed)
-        heatmap_scores = np.asarray([row["heatmap_score"] for row in test_rows], dtype=float)
-        baseline = {
-            "held_out_sample": fold_name,
-            "model": "Baseline_HeatmapScore",
-            "candidate_accuracy": float("nan"),
-            "candidate_balanced_accuracy": float("nan"),
-            "candidate_f1": float("nan"),
-            "candidate_roc_auc": roc_auc_score(y_test, heatmap_scores),
-            "train_time_sec": 0.0,
-            "confusion_matrix": None,
-            **rank_metrics(test_rows, heatmap_scores, "model"),
-            **prep,
-            "train_count": len(y_train),
-            "test_count": len(y_test),
-            "train_positive": int(y_train.sum()),
-            "test_positive": int(y_test.sum()),
-        }
-        baseline.update(refinement_metrics(
-            data_dir,
-            test_rows,
-            heatmap_scores,
-            alpha=args.refine_alpha,
-            sigma=args.refine_sigma,
-            top_k=args.refine_top_k,
-            threshold=args.refine_threshold,
-        ))
-        baseline_rows.append(baseline)
-        metric_rows.append(baseline)
+        for train_candidate_limit in train_candidate_sizes:
+            repeat_count = args.repeats if train_candidate_limit > 0 else 1
+            for repeat_idx in range(repeat_count):
+                split_seed = args.seed + 1009 * repeat_idx + int(train_candidate_limit)
+                train_idx = limit_training_candidates(full_train_idx, y, train_candidate_limit, split_seed)
+                X_train_raw, X_test_raw = X_raw[train_idx], X_raw[test_idx]
+                y_train, y_test = y[train_idx], y[test_idx]
+                if len(np.unique(y_train)) < 2:
+                    print(f"[skip] {fold_name}: selected training candidates lack both classes")
+                    continue
 
-        for name, estimator in models(args.seed).items():
-            print(f"[run] held_out={fold_name} model={name}")
-            row = evaluate_model(
-                name,
-                estimator,
-                X_train,
-                y_train,
-                X_test,
-                y_test,
-                test_rows,
-                data_dir=data_dir,
-                refine_alpha=args.refine_alpha,
-                refine_sigma=args.refine_sigma,
-                refine_top_k=args.refine_top_k,
-                refine_threshold=args.refine_threshold,
-            )
-            row.update({
-                "held_out_sample": fold_name,
-                **prep,
-                "train_count": len(y_train),
-                "test_count": len(y_test),
-                "train_positive": int(y_train.sum()),
-                "test_positive": int(y_test.sum()),
-            })
-            metric_rows.append(row)
+                X_train, X_test, prep = fit_low_dim(X_train_raw, X_test_raw, args.n_components, split_seed)
+                heatmap_scores = np.asarray([row["heatmap_score"] for row in test_rows], dtype=float)
+                limit_label = train_candidate_limit if train_candidate_limit > 0 else "all"
+                baseline = {
+                    "held_out_sample": fold_name,
+                    "repeat": repeat_idx,
+                    "train_candidate_limit": limit_label,
+                    "model": "Baseline_HeatmapScore",
+                    "candidate_accuracy": float("nan"),
+                    "candidate_balanced_accuracy": float("nan"),
+                    "candidate_f1": float("nan"),
+                    "candidate_roc_auc": roc_auc_score(y_test, heatmap_scores),
+                    "train_time_sec": 0.0,
+                    "confusion_matrix": None,
+                    **rank_metrics(test_rows, heatmap_scores, "model"),
+                    **prep,
+                    "train_count": len(y_train),
+                    "test_count": len(y_test),
+                    "train_positive": int(y_train.sum()),
+                    "test_positive": int(y_test.sum()),
+                }
+                baseline.update(refinement_metrics(
+                    data_dir,
+                    test_rows,
+                    heatmap_scores,
+                    alpha=args.refine_alpha,
+                    sigma=args.refine_sigma,
+                    top_k=args.refine_top_k,
+                    threshold=args.refine_threshold,
+                ))
+                baseline_rows.append(baseline)
+                metric_rows.append(baseline)
+
+                for name, estimator in models(split_seed).items():
+                    print(
+                        f"[run] held_out={fold_name} train_limit={limit_label} "
+                        f"repeat={repeat_idx} model={name}"
+                    )
+                    row = evaluate_model(
+                        name,
+                        estimator,
+                        X_train,
+                        y_train,
+                        X_test,
+                        y_test,
+                        test_rows,
+                        data_dir=data_dir,
+                        refine_alpha=args.refine_alpha,
+                        refine_sigma=args.refine_sigma,
+                        refine_top_k=args.refine_top_k,
+                        refine_threshold=args.refine_threshold,
+                    )
+                    row.update({
+                        "held_out_sample": fold_name,
+                        "repeat": repeat_idx,
+                        "train_candidate_limit": limit_label,
+                        **prep,
+                        "train_count": len(y_train),
+                        "test_count": len(y_test),
+                        "train_positive": int(y_train.sum()),
+                        "test_positive": int(y_test.sum()),
+                    })
+                    metric_rows.append(row)
 
     fields = [
         "held_out_sample",
+        "repeat",
+        "train_candidate_limit",
         "model",
         "candidate_accuracy",
         "candidate_balanced_accuracy",
@@ -688,7 +760,7 @@ def main():
     ]
     write_csv(Path(args.results_csv), metric_rows, fields)
     aggregate_rows = aggregate_metric_rows(metric_rows)
-    aggregate_fields = ["model", "folds"]
+    aggregate_fields = ["train_candidate_limit", "model", "folds"]
     for field in [
         "candidate_accuracy",
         "candidate_balanced_accuracy",
