@@ -505,3 +505,10 @@ Updated paper direction:
 
 > Quantum-kernel active learning for candidate annotation and top-k target recovery in
 > endoscopic image-guided intervention under domain shift.
+
+Publication-ready analysis artifacts:
+
+- `docs/active_learning_publication_results.md` contains paired bootstrap confidence intervals,
+  permutation tests, and learning-curve figures.
+- `docs/spie_mi104_active_learning_abstract_draft.md` contains a SPIE-style abstract draft using
+  the supported annotation-triage and top-k guidance claims.
