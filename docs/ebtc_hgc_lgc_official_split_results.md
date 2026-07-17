@@ -160,3 +160,50 @@ research angle than direct diagnosis:
 > A projected quantum-kernel second reader may improve low-label endoscopic tissue grading by
 > selectively reranking classically uncertain cases, but the effect disappears as classical
 > baselines receive more labels.
+
+## Validation-Tuned Triage Check
+
+To test whether the low-label triage result was robust, a stricter script was added:
+
+```bash
+TORCH_HOME=/private/tmp/torch_home python3 EndoscopicBladderTissue/experiments/validation_tuned_triage_ebtc.py \
+  --data_dir EndoscopicBladderTissue/dataset/baldder_tissue_classification \
+  --train_sizes 40 80 160 240 \
+  --repeats 3
+```
+
+This script selects the classical model, PQK model, coverage, and PQK confidence gate on the
+official validation split, then evaluates once on the official test split.
+
+| Train size | Validation-selected classical BA | Validation-selected hybrid BA | Hybrid delta |
+|---:|---:|---:|---:|
+| 40 | 0.674 | 0.636 | -0.038 |
+| 80 | 0.641 | 0.630 | -0.011 |
+| 160 | 0.544 | 0.511 | -0.034 |
+| 240 | 0.609 | 0.618 | +0.008 |
+
+Conclusion: the test-selected 40-label improvement does not survive validation-selected triage.
+This weakens the EBTC diagnosis story and suggests the earlier positive result should be treated
+as exploratory rather than as a publishable main claim.
+
+## Stronger Classical Feature Check
+
+A one-off diagnostic compared the 6D PCA benchmark against stronger raw ResNet feature baselines.
+Raw ResNet features substantially raised the classical ceiling:
+
+| Training setting | Best raw-feature classical BA | Best raw-feature classical AUC |
+|---|---:|---:|
+| 40 labels | 0.696 | 0.784 |
+| 80 labels | 0.761 | 0.884 |
+| 160 labels | 0.773 | 0.903 |
+| 240 labels | 0.789 | 0.906 |
+| train+val | 0.811 | 0.931 |
+
+Adding WLI/NBI modality metadata produced only small changes. A dual-space hybrid using a
+raw-feature classical base plus compact PQK triage also did not improve over the stronger
+classical base. This indicates that EBTC HGC/LGC diagnosis is currently better framed as a strong
+classical baseline plus a negative/limited quantum benchmark, not as the main quantum-positive
+SPIE result.
+
+Recommended next move: use the quantum component in the image-guidance/reranking setting where
+the output is candidate localization or heatmap refinement, not whole-image tissue grading.
