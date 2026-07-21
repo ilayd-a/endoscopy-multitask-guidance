@@ -405,6 +405,34 @@ high-confidence subset exceeds the average prompt-pool oracle over all test
 cases because the system identifies easier, reliable cases and abstains on
 harder frames.
 
+## Validation-Calibrated Confidence Gating
+
+The confidence-gated result above ranks held-out cases by predicted quality
+after evaluation. A stricter analysis was added to avoid choosing operating
+points from test labels:
+
+1. Train the context-augmented selector on training sequences only.
+2. Choose predicted-quality thresholds on validation sequences only.
+3. Freeze each threshold.
+4. Apply the frozen threshold once to held-out test sequences.
+
+Held-out test with validation-calibrated thresholds:
+
+| Validation target Dice | Test auto coverage | Test Dice | Test IoU | Dice >= 0.50 | Dice >= 0.70 |
+|---:|---:|---:|---:|---:|---:|
+| all automatic | 100.0% | 0.586 | 0.455 | NA | NA |
+| 0.75 | 65.2% | 0.641 | 0.510 | 0.767 | 0.326 |
+| 0.82 | 53.0% | 0.655 | 0.525 | 0.829 | 0.314 |
+| 0.84 | 42.4% | 0.697 | 0.571 | 0.857 | 0.393 |
+| 0.86 | 30.3% | 0.722 | 0.611 | 0.850 | 0.500 |
+| 0.88 | 24.2% | 0.764 | 0.652 | 0.938 | 0.562 |
+
+Interpretation: validation-calibrated abstention gives a scientifically cleaner
+clinical workflow. At the strictest validated operating point, the selector
+automatically accepts roughly one quarter of held-out frames with 0.764 mean
+Dice, while routing the rest to human review. This avoids overclaiming full
+automation and gives a concrete safety/coverage tradeoff for SPIE MI104.
+
 ## Residual QML and Label Efficiency
 
 The two-branch model was extended with a residual QML branch:
