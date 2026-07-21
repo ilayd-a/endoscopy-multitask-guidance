@@ -361,3 +361,46 @@ features before projection. A more defensible next QML design is a two-branch
 selector: use context features for a classical candidate prior, then apply
 quantum/projected quantum features only to SAM-embedding semantics or to the
 residual ambiguity among plausible prompts.
+
+## Two-Branch and Confidence-Gated Selection
+
+A two-branch selector was evaluated after the context-feature result:
+
+- branch A: classical context-augmented prompt-quality prior
+- branch B: projected-quantum-feature HistGB trained on SAM-embedding semantic
+  features only
+- final score: per-frame normalized blend of the two branches
+
+Held-out test:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| Two-branch 90% prior / 10% QML semantic | 0.596 |
+| Classical context-augmented prior | 0.595 |
+| Two-branch 95% prior / 5% QML semantic | 0.595 |
+| QML semantic branch alone | 0.439 |
+
+Interpretation: two-branch blending gives only a negligible improvement over the
+classical context prior. The QML semantic branch is not harmful at low weight,
+but it is not yet a strong standalone improvement.
+
+A more clinically relevant improvement is confidence gating. Using the
+context-augmented selector's predicted prompt quality as a confidence score, the
+system can auto-accept high-confidence cases and route uncertain cases to review.
+
+Held-out test confidence-gated performance:
+
+| Accepted coverage | Review coverage | Dice | IoU | Dice >= 0.50 | Dice >= 0.70 |
+|---:|---:|---:|---:|---:|---:|
+| 25% | 75% | 0.732 | 0.619 | 0.875 | 0.562 |
+| 50% | 50% | 0.680 | 0.549 | 0.848 | 0.394 |
+| 75% | 25% | 0.645 | 0.509 | 0.800 | 0.360 |
+| 100% | 0% | 0.595 | 0.462 | 0.682 | 0.318 |
+
+Interpretation: confidence gating turns the method from a forced fully
+automatic system into a review-aware clinical workflow. This is likely more
+publishable and realistic than claiming full automation on every frame. The
+high-confidence subset exceeds the average prompt-pool oracle over all test
+cases because the system identifies easier, reliable cases and abstains on
+harder frames.
