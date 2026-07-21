@@ -19,15 +19,25 @@ import pandas as pd
 
 def minmax(values: np.ndarray) -> np.ndarray:
     values = values.astype(float)
-    lo = float(np.nanmin(values))
-    hi = float(np.nanmax(values))
+    finite = np.isfinite(values)
+    if not finite.any():
+        return np.zeros_like(values, dtype=np.float32)
+    lo = float(np.nanmin(values[finite]))
+    hi = float(np.nanmax(values[finite]))
     if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
         return np.zeros_like(values, dtype=np.float32)
-    return ((values - lo) / (hi - lo)).astype(np.float32)
+    out = (values - lo) / (hi - lo)
+    out[~finite] = 0.0
+    return out.astype(np.float32)
 
 
 def percentile_rank(values: np.ndarray, descending: bool) -> np.ndarray:
-    order = np.argsort(-values if descending else values)
+    values = values.astype(float)
+    if not np.isfinite(values).any():
+        return np.zeros(len(values), dtype=np.float32)
+    fill = -np.inf if descending else np.inf
+    ranked_values = np.where(np.isfinite(values), values, fill)
+    order = np.argsort(-ranked_values if descending else ranked_values)
     ranks = np.empty(len(values), dtype=np.float32)
     ranks[order] = np.arange(len(values), dtype=np.float32)
     denom = max(1, len(values) - 1)
@@ -50,8 +60,10 @@ def build_context(qdf: pd.DataFrame) -> np.ndarray:
         sam_norm = minmax(sam)
         center_norm = minmax(center_dist)
         inv_center = 1.0 - center_norm
-        y_norm = (y / max(1.0, float(np.nanmax(y)))).astype(np.float32)
-        x_norm = (x / max(1.0, float(np.nanmax(x)))).astype(np.float32)
+        y_max = float(np.nanmax(y)) if np.isfinite(y).any() else 1.0
+        x_max = float(np.nanmax(x)) if np.isfinite(x).any() else 1.0
+        y_norm = (np.nan_to_num(y, nan=0.0) / max(1.0, y_max)).astype(np.float32)
+        x_norm = (np.nan_to_num(x, nan=0.0) / max(1.0, x_max)).astype(np.float32)
         radius_norm = (radius / 128.0).astype(np.float32)
         heatmap_rank = percentile_rank(heatmap, descending=True)
         sam_rank = percentile_rank(sam, descending=True)

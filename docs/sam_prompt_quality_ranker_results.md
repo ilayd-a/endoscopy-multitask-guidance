@@ -497,6 +497,51 @@ accuracy" to:
 > choice and projected quantum semantic agreement for review-aware trust
 > calibration.
 
+## External PolypGen Validation
+
+An external validation path was added using a locally available PolypGen
+positive subset:
+
+- Dataset source: `PolypGen2021_MultiCenterData_v3/positive`
+- Exported frames: 80 valid positive frames
+- Skipped during export: 20 near-empty/problem masks after resizing
+- Candidate prompts: 6,720 total, 84 per frame
+- Candidate-generation inputs: image-derived saliency/center prior only; no
+  ground-truth leakage
+- External data usage: evaluation only. Models are trained on CVC train and
+  thresholds are calibrated on CVC validation.
+
+External candidate ceiling:
+
+| Metric | Value |
+|---|---:|
+| Samples | 80 |
+| Mean best-candidate Dice | 0.765 |
+| Frames with any point-hit candidate | 97.5% |
+| Frames with best-candidate Dice >= 0.50 | 83.8% |
+| Frames with best-candidate Dice >= 0.70 | 67.5% |
+
+External PolypGen results with CVC-frozen calibration:
+
+| Policy | Quantum agreement weight | Validation target Dice | External coverage | External Dice | External IoU | Dice >= 0.50 | Dice >= 0.70 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| All automatic prior | - | - | 100.0% | 0.645 | 0.542 | 0.650 | 0.537 |
+| Confidence only | 0.0 | 0.82 | 63.7% | 0.726 | 0.635 | 0.745 | 0.686 |
+| Quantum agreement | 0.4 | 0.82 | 45.0% | 0.759 | 0.664 | 0.806 | 0.722 |
+| Confidence only | 0.0 | 0.86 | 46.3% | 0.732 | 0.638 | 0.757 | 0.703 |
+| Quantum agreement | 0.2 | 0.86 | 38.8% | 0.779 | 0.686 | 0.839 | 0.774 |
+| Confidence only | 0.0 | 0.88 | 40.0% | 0.743 | 0.651 | 0.781 | 0.719 |
+| Quantum agreement | 0.4 | 0.88 | 32.5% | 0.784 | 0.689 | 0.846 | 0.769 |
+
+Interpretation: the external result supports the same review-aware framing. A
+CVC-trained selector transfers to PolypGen at 0.645 Dice when it accepts every
+case automatically. Frozen confidence gates improve accepted-case quality, and
+adding the projected-quantum agreement signal gives a better high-confidence
+external subset at strict operating points. The strongest external setting so
+far reaches 0.784 Dice on 32.5% automatic coverage, close to the 0.765
+best-candidate ceiling over all external frames because it selectively accepts
+easier/high-agreement cases and routes the rest to review.
+
 ## Residual QML and Label Efficiency
 
 The two-branch model was extended with a residual QML branch:
