@@ -499,8 +499,13 @@ accuracy" to:
 
 ## External PolypGen Validation
 
-An external validation path was added using a locally available PolypGen
-positive subset:
+External validation paths were added using PolypGen and Kvasir-SEG. Kvasir-SEG
+is an open-access polyp segmentation dataset with 1,000 images and masks; any
+publication using it must cite the Kvasir-SEG paper.
+
+### PolypGen
+
+A locally available PolypGen positive subset was exported:
 
 - Dataset source: `PolypGen2021_MultiCenterData_v3/positive`
 - Exported frames: 80 valid positive frames
@@ -541,6 +546,50 @@ external subset at strict operating points. The strongest external setting so
 far reaches 0.784 Dice on 32.5% automatic coverage, close to the 0.765
 best-candidate ceiling over all external frames because it selectively accepts
 easier/high-agreement cases and routes the rest to review.
+
+### Kvasir-SEG
+
+A second external validation subset was exported from the official Kvasir-SEG
+archive:
+
+- Dataset source: `Kvasir-SEG`
+- Official archive: `https://datasets.simula.no/downloads/kvasir-seg.zip`
+- Exported frames: 120 valid positive frames
+- Candidate prompts: 10,078 total, 83.98 per frame on average
+- Candidate-generation inputs: image-derived saliency/center prior only; no
+  ground-truth leakage
+- External data usage: evaluation only. Models are trained on CVC train and
+  thresholds are calibrated on CVC validation.
+
+External candidate ceiling:
+
+| Metric | Value |
+|---|---:|
+| Samples | 120 |
+| Mean best-candidate Dice | 0.810 |
+| Frames with any point-hit candidate | 100.0% |
+| Frames with best-candidate Dice >= 0.50 | 93.3% |
+| Frames with best-candidate Dice >= 0.70 | 78.3% |
+
+External Kvasir-SEG results with CVC-frozen calibration:
+
+| Policy | Quantum agreement weight | Validation target Dice | External coverage | External Dice | External IoU | Dice >= 0.50 | Dice >= 0.70 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| All automatic prior | - | - | 100.0% | 0.737 | 0.621 | 0.867 | 0.683 |
+| Best confidence-gated subset | 0.4 | 0.82 | 51.7% | 0.817 | 0.714 | 0.952 | 0.839 |
+| Best confidence-gated subset | 0.3 | 0.84 | 43.3% | 0.845 | 0.750 | 0.981 | 0.904 |
+| Best confidence-gated subset | 0.3 | 0.86 | 40.0% | 0.842 | 0.747 | 0.979 | 0.896 |
+| Best confidence-gated subset | 0.0 | 0.88 | 46.7% | 0.849 | 0.754 | 0.982 | 0.929 |
+
+Interpretation: Kvasir-SEG provides a larger and commonly used external polyp
+segmentation validation set. The frozen CVC-trained selector transfers better
+to Kvasir than to PolypGen, reaching 0.737 Dice with full automatic coverage.
+Validation-calibrated confidence gating raises accepted-case quality to roughly
+0.82-0.85 Dice on 40-52% of cases. Unlike PolypGen, the strongest Kvasir
+operating point at the strictest target does not require the quantum-agreement
+term, so the quantum contribution should be presented as dataset-dependent and
+most useful for selective trust calibration rather than as a universal
+performance booster.
 
 ## Residual QML and Label Efficiency
 

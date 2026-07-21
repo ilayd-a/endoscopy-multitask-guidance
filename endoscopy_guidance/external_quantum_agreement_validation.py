@@ -2,8 +2,7 @@
 external_quantum_agreement_validation.py
 =======================================
 Train and calibrate on the internal CVC prompt-quality benchmark, then evaluate
-the frozen selector and confidence gates on an external PolypGen prompt-quality
-cache.
+the frozen selector and confidence gates on an external prompt-quality cache.
 
 This script keeps external data out of model fitting and threshold selection.
 """
@@ -89,6 +88,7 @@ def main():
     parser.add_argument("--external_context_features", default="endoscopy_guidance/results/polypgen_external_80_v2_prompt_quality_features_samembed_context.npy")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/polypgen_external_quantum_agreement_validation.csv")
     parser.add_argument("--per_sample_csv", default="endoscopy_guidance/results/polypgen_external_quantum_agreement_per_sample.csv")
+    parser.add_argument("--external_name", default="external_polypgen")
     parser.add_argument("--pqk_components", type=int, default=12)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--agreement_weights", type=float, nargs="+", default=[0.0, 0.1, 0.2, 0.3, 0.4])
@@ -133,11 +133,11 @@ def main():
     chosen_ext = selected_rows(ext_df, ext_prior, ext_q)
 
     rows = [
-        candidate_set_metrics(ext_df, "external_polypgen"),
-        oracle_metrics(ext_df, "external_polypgen"),
+        candidate_set_metrics(ext_df, args.external_name),
+        oracle_metrics(ext_df, args.external_name),
         {
             "policy": "all_auto_prior",
-            "split": "external_polypgen",
+            "split": args.external_name,
             "samples": int(chosen_ext["sample_id"].nunique()),
             **all_auto_metrics(chosen_ext),
             "agreement_weight": np.nan,
@@ -155,7 +155,7 @@ def main():
             accepted = conf_ext >= selected["threshold"]
             for row, conf, accept in zip(chosen_ext.itertuples(index=False), conf_ext, accepted):
                 per_sample_rows.append({
-                    "split": "external_polypgen",
+                    "split": args.external_name,
                     "sample_id": row.sample_id,
                     "source_file": getattr(row, "source_file", ""),
                     "source_group": getattr(row, "source_group", ""),
@@ -172,7 +172,7 @@ def main():
                 })
             rows.append({
                 "policy": "quantum_agreement_confidence",
-                "split": "external_polypgen",
+                "split": args.external_name,
                 "samples": int(chosen_ext["sample_id"].nunique()),
                 "agreement_weight": agreement_weight,
                 "target_dice": selected["target_dice"],
