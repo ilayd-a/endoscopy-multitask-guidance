@@ -433,6 +433,46 @@ automatically accepts roughly one quarter of held-out frames with 0.764 mean
 Dice, while routing the rest to human review. This avoids overclaiming full
 automation and gives a concrete safety/coverage tradeoff for SPIE MI104.
 
+## Quantum-Agreement Confidence Gating
+
+The next experiment gave the quantum branch a more specific role: trust
+estimation rather than direct prompt selection. The classical context model
+still selects the candidate prompt, while the projected-quantum semantic branch
+estimates whether the selected prompt is semantically consistent with the
+SAM-embedding representation. Confidence is then:
+
+> classical predicted prompt quality + quantum semantic agreement
+
+Thresholds are still chosen only on validation and then frozen for held-out test.
+
+Held-out test, validation-calibrated confidence:
+
+| Validation target Dice | Quantum agreement weight | Test coverage | Test Dice | Test IoU | Dice >= 0.50 | Dice >= 0.70 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.82 | 0.0 | 53.0% | 0.655 | 0.525 | 0.829 | 0.314 |
+| 0.82 | 0.4 | 39.4% | 0.715 | 0.590 | 0.885 | 0.423 |
+| 0.84 | 0.0 | 42.4% | 0.697 | 0.571 | 0.857 | 0.393 |
+| 0.84 | 0.2 | 34.8% | 0.737 | 0.618 | 0.913 | 0.478 |
+| 0.86 | 0.0 | 30.3% | 0.722 | 0.611 | 0.850 | 0.500 |
+| 0.86 | 0.2 | 25.8% | 0.774 | 0.667 | 0.941 | 0.588 |
+| 0.88 | 0.0 | 24.2% | 0.764 | 0.652 | 0.938 | 0.562 |
+| 0.88 | 0.1 | 22.7% | 0.788 | 0.678 | 1.000 | 0.600 |
+
+Interpretation: this is the clearest quantum contribution so far. QML does not
+beat the classical context model as the main prompt selector, but projected
+quantum semantic agreement improves validation-calibrated confidence gating at
+strict operating points. In a clinical workflow, this means the quantum branch
+can act as a trust/triage signal: auto-accept fewer cases, but with higher
+expected segmentation quality and fewer low-Dice failures.
+
+This changes the preferred paper framing from "quantum improves segmentation
+accuracy" to:
+
+> Quantum-assisted confidence gating for promptable endoscopic segmentation:
+> a hybrid classical/quantum selector that uses classical context for prompt
+> choice and projected quantum semantic agreement for review-aware trust
+> calibration.
+
 ## Residual QML and Label Efficiency
 
 The two-branch model was extended with a residual QML branch:
