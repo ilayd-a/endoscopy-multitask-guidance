@@ -314,3 +314,50 @@ This strengthens the paper direction:
 > Quantum-feature prompt-quality ranking for promptable endoscopic
 > segmentation, using frozen SAM representations to improve domain-shifted
 > prompt localization.
+
+## Candidate-Context Feature Augmentation
+
+A follow-up experiment appended inference-available per-frame candidate context
+features to the SAM-embedding prompt descriptors:
+
+- within-frame normalized heatmap score
+- within-frame normalized SAM score
+- inverse center distance
+- normalized prompt location
+- heatmap/SAM/center percentile ranks
+- combined candidate prior
+
+These features do not use ground-truth masks or SAM Dice labels.
+
+Validation:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.854 |
+| Classical HistGBReg + SAM embedding + context | 0.801 |
+| Classical RidgeReg + SAM embedding + context | 0.736 |
+| QML PQF HistGBReg 12pc + SAM embedding + context | 0.653 |
+| QML PQK quality 12pc + SAM embedding + context | 0.606 |
+| Heatmap score | 0.363 |
+
+Held-out test:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| Classical HistGBReg + SAM embedding + context | 0.595 |
+| Classical RidgeReg + SAM embedding + context | 0.526 |
+| QML PQF HistGBReg 12pc + SAM embedding only | 0.439 |
+| QML PQF HistGBReg 12pc + SAM embedding + context | 0.396 |
+| QML PQK quality 12pc + SAM embedding + context | 0.376 |
+| Heatmap score | 0.089 |
+
+Interpretation: candidate-context features are the strongest absolute
+performance improvement so far, reducing the gap to the oracle prompt-quality
+ceiling. However, the improvement is classical rather than quantum: the QML
+models degrade when the raw context features are appended before PCA. This
+suggests that future quantum experiments should not simply concatenate all
+features before projection. A more defensible next QML design is a two-branch
+selector: use context features for a classical candidate prior, then apply
+quantum/projected quantum features only to SAM-embedding semantics or to the
+residual ambiguity among plausible prompts.

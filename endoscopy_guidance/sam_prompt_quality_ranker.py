@@ -219,6 +219,20 @@ def blended_sample_scores(
     return model_weight * model_norm + sam_weight * sam_norm + heatmap_weight * heatmap_norm
 
 
+def prefilter_eval_candidates(qdf: pd.DataFrame, X: np.ndarray, cap: int) -> tuple[pd.DataFrame, np.ndarray]:
+    if cap <= 0:
+        return qdf.copy(), X
+    rows = qdf.copy()
+    sample_ids = rows["sample_id"].to_numpy()
+    heatmap = per_sample_normalize(rows["heatmap_score"].to_numpy(dtype=float), sample_ids)
+    sam = per_sample_normalize(rows["sam_score"].to_numpy(dtype=float), sample_ids)
+    center = 1.0 - per_sample_normalize(rows["center_dist"].to_numpy(dtype=float), sample_ids)
+    rows["_prefilter_score"] = 0.45 * heatmap + 0.45 * sam + 0.10 * center
+    keep_idx = rows.sort_values("_prefilter_score", ascending=False).groupby("sample_id").head(cap).index.to_numpy()
+    keep_idx = np.sort(keep_idx)
+    return rows.loc[keep_idx].drop(columns=["_prefilter_score"]), X[keep_idx]
+
+
 def projected_quantum_features(X_angle: np.ndarray, reps: int) -> np.ndarray:
     features = [np.cos(X_angle), np.sin(X_angle)]
     if reps >= 2:
@@ -241,6 +255,7 @@ def evaluate_rankers(args):
     eval_df = qdf[eval_mask].copy()
     X_train = Q[train_mask]
     X_eval = Q[eval_mask]
+    eval_df, X_eval = prefilter_eval_candidates(eval_df.reset_index(drop=True), X_eval, args.eval_candidate_cap)
     y_train_reg = train["sam_dice"].to_numpy(dtype=float)
     good_threshold = args.good_threshold
     if good_threshold <= 0:
@@ -253,7 +268,12 @@ def evaluate_rankers(args):
     results.append(sample_level_eval(eval_df, eval_df["sam_dice"].to_numpy(dtype=float), "oracle_prompt_quality"))
 
     regressors = {
-        "Classical_HistGBReg": HistGradientBoostingRegressor(max_iter=180, learning_rate=0.05, random_state=args.seed),
+        "Classical_HistGBReg": HistGradientBoostingRegressor(
+            max_iter=args.histgb_max_iter,
+            learning_rate=args.histgb_learning_rate,
+            l2_regularization=args.histgb_l2,
+            random_state=args.seed,
+        ),
         "Classical_RidgeReg": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
     }
     if args.model_set == "pqk_only":
@@ -288,7 +308,10 @@ def evaluate_rankers(args):
                 qregressors = {
                     f"QML_PQF_RidgeReg_{n_components}pc": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
                     f"QML_PQF_HistGBReg_{n_components}pc": HistGradientBoostingRegressor(
-                        max_iter=180, learning_rate=0.05, random_state=args.seed
+                        max_iter=args.histgb_max_iter,
+                        learning_rate=args.histgb_learning_rate,
+                        l2_regularization=args.histgb_l2,
+                        random_state=args.seed,
                     ),
                 }
                 if args.model_set == "full":
@@ -357,10 +380,19 @@ def main():
     parser.add_argument("--max_samples_per_split", type=int, default=0)
     parser.add_argument("--radii", type=int, nargs="+", default=[32, 48, 64, 96])
     parser.add_argument("--eval_split", choices=["val", "test"], default="val")
+    parser.add_argument(
+        "--eval_candidate_cap",
+        type=int,
+        default=0,
+        help="If >0, rank only the top N plausible candidates per eval frame using heatmap/SAM/center priors.",
+    )
     parser.add_argument("--pqk_components", type=int, nargs="+", default=[6, 8, 10, 12])
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--pqk_c", type=float, default=1.0)
     parser.add_argument("--good_threshold", type=float, default=0.5)
+    parser.add_argument("--histgb_max_iter", type=int, default=180)
+    parser.add_argument("--histgb_learning_rate", type=float, default=0.05)
+    parser.add_argument("--histgb_l2", type=float, default=0.0)
     parser.add_argument(
         "--model_set",
         choices=["fast", "full", "pqk_only"],
