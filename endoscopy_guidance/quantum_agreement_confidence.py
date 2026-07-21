@@ -131,6 +131,7 @@ def main():
     parser.add_argument("--semantic_features", default="endoscopy_guidance/results/sam_prompt_quality_features_full_r48_samembed.npy")
     parser.add_argument("--context_features", default="endoscopy_guidance/results/sam_prompt_quality_features_full_r48_samembed_context.npy")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/quantum_agreement_confidence.csv")
+    parser.add_argument("--per_sample_csv", default="endoscopy_guidance/results/quantum_agreement_confidence_per_sample.csv")
     parser.add_argument("--pqk_components", type=int, default=12)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--agreement_weights", type=float, nargs="+", default=[0.0, 0.1, 0.2, 0.3, 0.4])
@@ -166,6 +167,7 @@ def main():
     chosen_test = selected_rows(test_df, test_prior, test_q)
 
     rows = []
+    per_sample_rows = []
     rows.append({"policy": "all_auto_prior", "split": "test", **all_auto_metrics(chosen_test), "agreement_weight": np.nan, "target_dice": np.nan, "threshold": -np.inf})
     for agreement_weight in args.agreement_weights:
         conf_val = confidence_score(chosen_val, agreement_weight)
@@ -173,6 +175,22 @@ def main():
         selections = choose_thresholds(chosen_val, conf_val, args.target_dice, args.min_coverage)
         for selected in selections:
             for split, chosen, confidence in [("val", chosen_val, conf_val), ("test", chosen_test, conf_test)]:
+                accepted = confidence >= selected["threshold"]
+                for row, conf, accept in zip(chosen.itertuples(index=False), confidence, accepted):
+                    per_sample_rows.append({
+                        "split": split,
+                        "sample_id": row.sample_id,
+                        "agreement_weight": agreement_weight,
+                        "target_dice": selected["target_dice"],
+                        "threshold": selected["threshold"],
+                        "confidence": float(conf),
+                        "accepted": int(accept),
+                        "sam_dice": float(row.sam_dice),
+                        "sam_iou": float(row.sam_iou),
+                        "point_hit": int(row.point_hit),
+                        "predicted_quality": float(row.predicted_quality),
+                        "quantum_agreement": float(row.quantum_agreement),
+                    })
                 rows.append({
                     "policy": "quantum_agreement_confidence",
                     "split": split,
@@ -187,7 +205,10 @@ def main():
     output = Path(args.output_csv)
     output.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(output, index=False)
+    per_sample_output = Path(args.per_sample_csv)
+    pd.DataFrame(per_sample_rows).to_csv(per_sample_output, index=False)
     print(f"[saved] {output}")
+    print(f"[saved] {per_sample_output}")
     print(summary.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
 

@@ -465,6 +465,30 @@ strict operating points. In a clinical workflow, this means the quantum branch
 can act as a trust/triage signal: auto-accept fewer cases, but with higher
 expected segmentation quality and fewer low-Dice failures.
 
+Paired held-out statistical analysis was then added using per-sample
+accepted/rejected decisions. The strongest statistically supported operating
+point was:
+
+| Validation target | Quantum agreement weight | Coverage delta | Dice delta | 95% bootstrap CI | Permutation p |
+|---:|---:|---:|---:|---:|---:|
+| 0.82 | 0.4 | -13.6 pp | +0.060 | [0.007, 0.122] | 0.037 |
+
+Other strict operating points had positive Dice deltas but wider confidence
+intervals:
+
+| Validation target | Quantum agreement weight | Dice delta | 95% bootstrap CI | Permutation p |
+|---:|---:|---:|---:|---:|
+| 0.84 | 0.2 | +0.040 | [-0.015, 0.102] | 0.201 |
+| 0.86 | 0.2 | +0.052 | [0.000, 0.127] | 0.247 |
+| 0.88 | 0.1 | +0.024 | [0.000, 0.083] | 1.000 |
+
+Interpretation: the quantum-agreement result is promising but should be framed
+as preliminary. It is strongest at moderate review coverage, where the quantum
+agreement signal improves accepted-case quality with statistical support. At
+very strict coverage levels, the accepted sample count is small, so confidence
+intervals widen and the result should be treated as an operating-point
+exploration rather than definitive evidence.
+
 This changes the preferred paper framing from "quantum improves segmentation
 accuracy" to:
 
