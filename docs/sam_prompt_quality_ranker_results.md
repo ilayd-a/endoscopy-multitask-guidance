@@ -497,7 +497,7 @@ accuracy" to:
 > choice and projected quantum semantic agreement for review-aware trust
 > calibration.
 
-## External PolypGen Validation
+## External Dataset Validation
 
 External validation paths were added using PolypGen and Kvasir-SEG. Kvasir-SEG
 is an open-access polyp segmentation dataset with 1,000 images and masks; any
@@ -576,20 +576,43 @@ External Kvasir-SEG results with CVC-frozen calibration:
 | Policy | Quantum agreement weight | Validation target Dice | External coverage | External Dice | External IoU | Dice >= 0.50 | Dice >= 0.70 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | All automatic prior | - | - | 100.0% | 0.737 | 0.621 | 0.867 | 0.683 |
-| Best confidence-gated subset | 0.4 | 0.82 | 51.7% | 0.817 | 0.714 | 0.952 | 0.839 |
-| Best confidence-gated subset | 0.3 | 0.84 | 43.3% | 0.845 | 0.750 | 0.981 | 0.904 |
-| Best confidence-gated subset | 0.3 | 0.86 | 40.0% | 0.842 | 0.747 | 0.979 | 0.896 |
-| Best confidence-gated subset | 0.0 | 0.88 | 46.7% | 0.849 | 0.754 | 0.982 | 0.929 |
+| Confidence only | 0.0 | 0.82 | 78.3% | 0.786 | 0.676 | 0.926 | 0.787 |
+| Quantum agreement | 0.4 | 0.82 | 51.7% | 0.817 | 0.714 | 0.952 | 0.839 |
+| Confidence only | 0.0 | 0.86 | 54.2% | 0.826 | 0.725 | 0.954 | 0.877 |
+| Quantum agreement | 0.2 | 0.86 | 43.3% | 0.842 | 0.746 | 0.981 | 0.904 |
+| Confidence only | 0.0 | 0.88 | 46.7% | 0.849 | 0.754 | 0.982 | 0.929 |
+| Quantum agreement | 0.4 | 0.88 | 38.3% | 0.844 | 0.750 | 0.978 | 0.891 |
 
 Interpretation: Kvasir-SEG provides a larger and commonly used external polyp
 segmentation validation set. The frozen CVC-trained selector transfers better
 to Kvasir than to PolypGen, reaching 0.737 Dice with full automatic coverage.
 Validation-calibrated confidence gating raises accepted-case quality to roughly
-0.82-0.85 Dice on 40-52% of cases. Unlike PolypGen, the strongest Kvasir
-operating point at the strictest target does not require the quantum-agreement
-term, so the quantum contribution should be presented as dataset-dependent and
-most useful for selective trust calibration rather than as a universal
-performance booster.
+0.82-0.85 Dice on 38-52% of cases. The Kvasir results are less uniformly
+quantum-favorable than PolypGen: at the strictest target, confidence-only keeps
+slightly higher Dice and coverage, while the quantum-weighted gate remains
+competitive. Therefore, the defensible claim is not that quantum improves every
+dataset/operating point, but that a pre-specified quantum-agreement gate can
+improve cross-dataset selective reliability by accepting fewer, more
+semantically consistent cases.
+
+### Cross-Dataset Quantum-Forward Operating Points
+
+To avoid choosing a different best policy for each external dataset, the
+following operating points were fixed by CVC validation and then pooled across
+PolypGen and Kvasir-SEG external samples:
+
+| Validation target Dice | Quantum agreement weight | Accepted samples | External coverage | External Dice | Confidence-only Dice | Dice delta |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.82 | 0.4 | 98 / 200 | 49.0% | 0.796 | 0.765 | +0.031 |
+| 0.86 | 0.2 | 83 / 200 | 41.5% | 0.819 | 0.792 | +0.027 |
+| 0.88 | 0.4 | 72 / 200 | 36.0% | 0.823 | 0.811 | +0.012 |
+
+Interpretation: this is the cleanest "quantum-forward" external result. The
+quantum agreement signal behaves as a conservative trust filter. It reduces
+automatic coverage compared with confidence-only gating, but improves pooled
+accepted-case Dice across both external datasets at all three tested operating
+points. For a medical imaging paper, that is a more credible contribution than
+claiming broad fully automatic segmentation improvement.
 
 ## Residual QML and Label Efficiency
 
