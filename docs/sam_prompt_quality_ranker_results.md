@@ -265,3 +265,52 @@ Next publishable improvement should therefore target the representation:
 - compare vanilla SAM with a medical/domain-adapted SAM or SAM2 variant
 - test label efficiency curves for the full-cache PQK quality selector
 - add cross-dataset validation after the selector is stable
+
+## SAM-Embedding Prompt Features
+
+The next representation-level experiment appended local frozen-SAM image
+embedding descriptors to each candidate prompt feature vector. For each
+candidate point, the cached SAM ViT-B image embedding was sampled at the prompt
+location using:
+
+- center embedding vector
+- local 3x3 mean
+- local 3x3 standard deviation
+
+This adds prompt-local semantic features without rerunning SAM masks.
+
+Validation with full-cache radius-48 labels:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.854 |
+| Classical RidgeReg + SAM embedding features | 0.708 |
+| Classical HistGBReg + SAM embedding features | 0.687 |
+| QML PQF HistGBReg 12pc + SAM embedding features | 0.671 |
+| QML PQK quality 12pc + SAM embedding features | 0.584 |
+| Heatmap score | 0.363 |
+
+Held-out test:
+
+| Strategy | Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| QML PQF HistGBReg 12pc + SAM embedding features | 0.439 |
+| Classical HistGBReg + SAM embedding features | 0.438 |
+| Classical RidgeReg + SAM embedding features | 0.423 |
+| QML PQK quality 16pc + SAM embedding features | 0.405 |
+| Previous best QML PQK quality 12pc, no SAM embeddings | 0.397 |
+| Heatmap score | 0.089 |
+
+Interpretation: adding SAM image-embedding descriptors is the largest
+representation improvement so far. The best held-out test result improved from
+0.397 to 0.439 Dice, and the best QML-derived projected-feature ranker is
+competitive with the strongest classical prompt-quality regressor. The result
+also shows that richer medical/domain features matter more than objective
+reformulation alone.
+
+This strengthens the paper direction:
+
+> Quantum-feature prompt-quality ranking for promptable endoscopic
+> segmentation, using frozen SAM representations to improve domain-shifted
+> prompt localization.
