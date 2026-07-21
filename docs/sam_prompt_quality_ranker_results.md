@@ -404,3 +404,53 @@ publishable and realistic than claiming full automation on every frame. The
 high-confidence subset exceeds the average prompt-pool oracle over all test
 cases because the system identifies easier, reliable cases and abstains on
 harder frames.
+
+## Residual QML and Label Efficiency
+
+The two-branch model was extended with a residual QML branch:
+
+1. Train the context-augmented classical prior.
+2. Predict training-set prompt quality with that prior.
+3. Train the QML semantic branch on the residual error.
+4. Add the predicted residual back to the classical prior.
+
+Validation improved slightly:
+
+| Strategy | Validation Dice |
+|---|---:|
+| Oracle prompt quality | 0.854 |
+| Residual QML, weight 1.0 | 0.806 |
+| Classical context prior | 0.801 |
+
+Held-out test did not improve:
+
+| Strategy | Held-out Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| Two-branch 90% prior / 10% semantic | 0.596 |
+| Classical context prior | 0.595 |
+| Residual QML, weight 0.25 | 0.595 |
+| Residual QML, weight 1.0 | 0.589 |
+
+Interpretation: residual QML is a useful ablation but not the current best
+held-out selector. The small validation gain does not transfer reliably.
+
+A label-efficiency study then trained the main classical context selector and
+the QML semantic selector with fewer prompt-quality labeled training frames.
+
+Held-out test:
+
+| Training frames | Classical context Dice | QML semantic Dice |
+|---:|---:|---:|
+| 25 | 0.503 | 0.392 |
+| 50 | 0.531 | 0.439 |
+| 100 | 0.546 | 0.374 |
+| 200 | 0.605 | 0.437 |
+| 546 | 0.595 | 0.439 |
+
+Interpretation: the current data do not support a label-efficiency quantum
+advantage. Classical context features are stronger across all tested training
+sizes. This is still useful for a rigorous paper: it shows that the strongest
+practical contribution is the prompt-quality framework and confidence-gated
+workflow, while the quantum branch remains an exploratory semantic-ranking
+component rather than the source of the best absolute performance.

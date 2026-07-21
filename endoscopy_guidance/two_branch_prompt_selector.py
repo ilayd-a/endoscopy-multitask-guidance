@@ -48,6 +48,10 @@ def blend_scores(qdf: pd.DataFrame, prior_scores: np.ndarray, semantic_scores: n
     return prior_weight * prior + (1.0 - prior_weight) * semantic
 
 
+def residual_scores(prior_scores: np.ndarray, residual_predictions: np.ndarray, residual_weight: float) -> np.ndarray:
+    return prior_scores + residual_weight * residual_predictions
+
+
 def shortlist_rerank_scores(
     qdf: pd.DataFrame,
     primary_scores: np.ndarray,
@@ -85,6 +89,7 @@ def main():
     parser.add_argument("--pqk_components", type=int, default=12)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--prior_weights", type=float, nargs="+", default=[0.5, 0.6, 0.7, 0.8, 0.9])
+    parser.add_argument("--residual_weights", type=float, nargs="+", default=[0.25, 0.5, 0.75, 1.0])
     parser.add_argument("--shortlist_top_k", type=int, nargs="+", default=[3, 5, 10])
     parser.add_argument("--histgb_max_iter", type=int, default=180)
     parser.add_argument("--histgb_learning_rate", type=float, default=0.05)
@@ -108,6 +113,7 @@ def main():
         random_state=args.seed,
     )
     prior_model.fit(X_prior[train_mask], y_train)
+    train_prior_scores = prior_model.predict(X_prior[train_mask])
     prior_scores = prior_model.predict(X_prior[eval_mask])
 
     X_train_q, X_eval_q, pca_info = fit_low_dim(
@@ -126,12 +132,29 @@ def main():
     semantic_model.fit(Z_train, y_train)
     semantic_scores = semantic_model.predict(Z_eval)
 
+    residual_model = HistGradientBoostingRegressor(
+        max_iter=args.histgb_max_iter,
+        learning_rate=args.histgb_learning_rate,
+        random_state=args.seed,
+    )
+    residual_model.fit(Z_train, y_train - train_prior_scores)
+    residual_predictions = residual_model.predict(Z_eval)
+
     results = [
         sample_level_eval(eval_df, eval_df["sam_dice"].to_numpy(dtype=float), "oracle_prompt_quality"),
         sample_level_eval(eval_df, prior_scores, "Classical_prior_context_augmented"),
         sample_level_eval(eval_df, semantic_scores, f"QML_semantic_PQF_HistGB_{args.pqk_components}pc"),
+        sample_level_eval(eval_df, residual_scores(prior_scores, residual_predictions, 1.0), "ResidualQML_prior_plus_semantic"),
         sample_level_eval(eval_df, eval_df["heatmap_score"].to_numpy(dtype=float), "heatmap_score"),
     ]
+    for residual_weight in args.residual_weights:
+        row = sample_level_eval(
+            eval_df,
+            residual_scores(prior_scores, residual_predictions, residual_weight),
+            f"ResidualQML_weight{residual_weight:g}",
+        )
+        row["pca_variance"] = pca_info["pca_variance_retained"]
+        results.append(row)
     for top_k in args.shortlist_top_k:
         for mode in ["sam", "combined"]:
             results.append(sample_level_eval(
