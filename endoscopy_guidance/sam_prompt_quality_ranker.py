@@ -253,11 +253,16 @@ def evaluate_rankers(args):
     results.append(sample_level_eval(eval_df, eval_df["sam_dice"].to_numpy(dtype=float), "oracle_prompt_quality"))
 
     regressors = {
-        "Classical_ExtraTreesReg": ExtraTreesRegressor(n_estimators=400, random_state=args.seed),
-        "Classical_RandomForestReg": RandomForestRegressor(n_estimators=250, random_state=args.seed),
         "Classical_HistGBReg": HistGradientBoostingRegressor(max_iter=180, learning_rate=0.05, random_state=args.seed),
         "Classical_RidgeReg": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
     }
+    if args.model_set == "pqk_only":
+        regressors = {}
+    elif args.model_set == "full":
+        regressors.update({
+            "Classical_ExtraTreesReg": ExtraTreesRegressor(n_estimators=400, random_state=args.seed),
+            "Classical_RandomForestReg": RandomForestRegressor(n_estimators=250, random_state=args.seed),
+        })
     for name, model in regressors.items():
         model.fit(X_train, y_train_reg)
         pred = model.predict(X_eval)
@@ -277,15 +282,19 @@ def evaluate_rankers(args):
             X_train_q, X_eval_q, pca_info = fit_low_dim(X_train, X_eval, n_components, args.seed)
             Z_train = projected_quantum_features(X_train_q, args.pqk_reps)
             Z_eval = projected_quantum_features(X_eval_q, args.pqk_reps)
-            qregressors = {
-                f"QML_PQF_RidgeReg_{n_components}pc": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
-                f"QML_PQF_HistGBReg_{n_components}pc": HistGradientBoostingRegressor(
-                    max_iter=180, learning_rate=0.05, random_state=args.seed
-                ),
-                f"QML_PQF_ExtraTreesReg_{n_components}pc": ExtraTreesRegressor(
-                    n_estimators=300, random_state=args.seed
-                ),
-            }
+            if args.model_set == "pqk_only":
+                qregressors = {}
+            else:
+                qregressors = {
+                    f"QML_PQF_RidgeReg_{n_components}pc": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
+                    f"QML_PQF_HistGBReg_{n_components}pc": HistGradientBoostingRegressor(
+                        max_iter=180, learning_rate=0.05, random_state=args.seed
+                    ),
+                }
+                if args.model_set == "full":
+                    qregressors[f"QML_PQF_ExtraTreesReg_{n_components}pc"] = ExtraTreesRegressor(
+                        n_estimators=300, random_state=args.seed
+                    )
             for qname, qmodel in qregressors.items():
                 qmodel.fit(Z_train, y_train_reg)
                 qscores = qmodel.predict(Z_eval)
@@ -352,6 +361,12 @@ def main():
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--pqk_c", type=float, default=1.0)
     parser.add_argument("--good_threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--model_set",
+        choices=["fast", "full", "pqk_only"],
+        default="full",
+        help="Use fast to skip the slowest tree-heavy regressors on full prompt-quality caches.",
+    )
     parser.add_argument(
         "--blend_weights",
         type=float,

@@ -214,3 +214,54 @@ ablation, but it is still far below the oracle prompt-quality ceiling (`0.664`).
 
 The next research bottleneck is prompt localization under domain shift, not SAM
 mask generation once a good prompt is available.
+
+## Full-Cache Training and Pairwise/Listwise Ablations
+
+A full radius-48 prompt-quality cache was generated across all available frames:
+
+- train: 478 frames / 40,138 prompt candidates
+- validation: 68 frames / 5,710 prompt candidates
+- test: 66 frames / 5,543 prompt candidates
+
+Using the full cache substantially improved held-out test performance:
+
+| Strategy | Held-out Dice |
+|---|---:|
+| Oracle prompt quality | 0.664 |
+| QML PQK quality 12pc | 0.397 |
+| Classical HistGBReg | 0.378 |
+| QML PQK quality 16pc | 0.374 |
+| Previous QML PQK quality 16pc, 80-train cache | 0.315 |
+| Heatmap score | 0.089 |
+
+Interpretation: the strongest improvement came from scaling prompt-quality
+supervision, not from adding more prompt points or score blending. The best
+current automatic selector is `QML_PQK_quality_12pc` trained on the full cache.
+
+Two ranking-specific ablations were then added:
+
+1. Pairwise ranking: learn whether prompt A beats prompt B within the same
+   frame, then score candidates by pairwise wins.
+2. Listwise ranking: label the best prompts within each frame as local winners.
+
+Validation results:
+
+| Ablation | Best QML Dice | Best classical Dice | Oracle Dice |
+|---|---:|---:|---:|
+| Pairwise, 800 pairs, 45-candidate cap | 0.430 | 0.510 | 0.849 |
+| Pairwise, 1600 pairs, 60-candidate cap | 0.211 | 0.510 | 0.853 |
+| Listwise, top-2 winners | 0.354 | 0.428 | 0.854 |
+| Listwise, top-1 winner | 0.382 | 0.455 | 0.854 |
+
+Interpretation: pairwise/listwise reformulations are useful ablations, but they
+do not improve on the full-cache pointwise PQK prompt-quality classifier. The
+likely reason is that the present feature representation is still too weak for
+fine prompt localization under sequence/domain shift; reframing the objective
+alone does not solve that bottleneck.
+
+Next publishable improvement should therefore target the representation:
+
+- extract SAM/MedSAM image-embedding features at each candidate prompt location
+- compare vanilla SAM with a medical/domain-adapted SAM or SAM2 variant
+- test label efficiency curves for the full-cache PQK quality selector
+- add cross-dataset validation after the selector is stable
