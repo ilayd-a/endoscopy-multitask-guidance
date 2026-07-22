@@ -235,3 +235,28 @@ also larger (+0.0083 vs +0.0036). This is a much more plausible publication
 direction than full-frame residual correction applied indiscriminately, but it
 still needs repeated-seed validation, external CVC/PolypGen confirmation, and
 paired significance testing.
+
+## Five-Seed Triggered Refinement Stability
+
+Repeated runs with different training subsamples/seeds preserve the same
+direction. All runs use Kvasir train for residual/trigger training, Kvasir val
+for threshold tuning, and Kvasir test for final reporting.
+
+| Model | Seeds | Mean test Dice delta | Mean hard Dice delta | Mean triggered frames |
+|---|---:|---:|---:|---:|
+| Projected quantum triggered | 5 | +0.00197 | +0.00875 | 4.4/100 |
+| Classical triggered | 5 | +0.00121 | +0.00538 | 4.2/100 |
+
+Paired quantum-minus-classical seed-level differences:
+
+| Endpoint | Mean advantage | Paired t-test p | Wilcoxon p | One-sided sign-test p |
+|---|---:|---:|---:|---:|
+| All-frame Dice delta | +0.00076 | 0.0023 | 0.0625 | 0.0313 |
+| Hard-frame Dice delta | +0.00337 | 0.0018 | 0.0625 | 0.0313 |
+
+Interpretation: the effect is consistent across seeds and reaches a one-sided
+sign-test threshold because all five paired seeds favor the quantum residual.
+However, the nonparametric two-sided Wilcoxon test remains just above 0.05 with
+only five paired seeds. The result is promising, but the paper should still add
+more external frames and paired bootstrap/permutation tests before claiming a
+definitive improvement.
