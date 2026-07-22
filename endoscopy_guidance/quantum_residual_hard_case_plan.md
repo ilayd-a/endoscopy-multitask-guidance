@@ -300,3 +300,27 @@ The larger-gain path should focus on better mask-hypothesis selection and a
 better inference-safe gate, likely using richer encoder/SAM embeddings,
 augmentation-consistency features, or temporal/video consistency features. The
 current stack should not be used as the headline.
+
+## Quantum-Kernel Selector Status
+
+A more explicitly quantum selector was added using a pairwise projected quantum
+kernel SVC: each training example asks whether a candidate threshold improves
+the frame Dice over the fixed 0.50 mask, and the model ranks candidate
+thresholds at inference.
+
+Kvasir test results:
+
+| Selector | Test Dice | Delta Dice | Hard Dice | Hard delta Dice |
+|---|---:|---:|---:|---:|
+| Fixed threshold 0.50 | 0.8576 | +0.0000 | 0.5781 | +0.0000 |
+| Best projected quantum kernel sweep | 0.8588 | +0.0012 | 0.5808 | +0.0027 |
+| Best hard-frame quantum kernel setting | 0.8578 | +0.0002 | 0.5847 | +0.0066 |
+| Classical pairwise HistGB | 0.8624 | +0.0048 | 0.5967 | +0.0187 |
+| Oracle threshold selector | 0.8778 | +0.0202 | 0.6343 | +0.0562 |
+
+Interpretation: this makes the threshold-selector route genuinely quantum, but
+the current quantum kernel still underperforms the best classical selector.
+The next quantum-specific improvement should therefore add richer features
+before the quantum map: encoder embeddings, SAM embeddings, test-time
+augmentation consistency, or temporal consistency. Simple probability-map
+morphology alone does not give the quantum kernel enough signal.
