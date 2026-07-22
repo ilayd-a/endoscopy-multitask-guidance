@@ -284,3 +284,19 @@ adaptive mask-hypothesis selection to get the larger hard-case gain, followed
 by triggered quantum residual refinement on the remaining high-risk frames.
 This keeps the quantum contribution clinically meaningful without pretending
 the current quantum threshold selector is already best.
+
+Follow-up stack test: materializing the classical-logistic selected thresholds
+as a new baseline improved Kvasir test Dice to 0.8601, but residual refinement
+on top did not compound the gain.
+
+| Stacked method | Test Dice | Delta vs selected baseline | Hard Dice | Hard delta vs selected baseline |
+|---|---:|---:|---:|---:|
+| Selected-threshold baseline | 0.8601 | +0.0000 | 0.5693 | +0.0000 |
+| Selected + triggered quantum residual | 0.8593 | -0.0008 | 0.5693 | -0.0000 |
+| Selected + triggered classical residual | 0.8595 | -0.0006 | 0.5703 | +0.0009 |
+
+Interpretation: naive residual cleanup after threshold selection is unstable.
+The larger-gain path should focus on better mask-hypothesis selection and a
+better inference-safe gate, likely using richer encoder/SAM embeddings,
+augmentation-consistency features, or temporal/video consistency features. The
+current stack should not be used as the headline.
