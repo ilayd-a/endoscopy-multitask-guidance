@@ -87,6 +87,7 @@ def load_frame_table(base: Path, thresholds: list[float]) -> pd.DataFrame:
         for idx, threshold in enumerate(thresholds):
             row[f"dice_t{threshold:.2f}"] = float(threshold_dice[idx])
             row[f"iou_t{threshold:.2f}"] = float(threshold_iou[idx])
+            row[f"features_t{threshold:.2f}"] = risk_features(prob, threshold=threshold)
         row["features"] = risk_features(prob, threshold=0.5)
         rows.append(row)
     return pd.DataFrame(rows)

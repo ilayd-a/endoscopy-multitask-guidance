@@ -35,6 +35,21 @@ from publication_benchmark_ebtc import ProjectedQuantumKernelSVC
 from quantum_mask_hypothesis_selector import load_frame_table, selected_dice
 
 
+def attach_embeddings(frame: pd.DataFrame, embedding_npz: str, embedding_weight: float) -> pd.DataFrame:
+    if not embedding_npz:
+        return frame
+    payload = np.load(embedding_npz, allow_pickle=True)
+    ids = payload["sample_ids"].astype(str).tolist()
+    embeddings = payload["embeddings"].astype(np.float32)
+    lookup = {sample_id: embeddings[idx] for idx, sample_id in enumerate(ids)}
+    enriched = frame.copy()
+    enriched["features"] = [
+        np.concatenate([np.asarray(features, dtype=np.float32), lookup[str(sample_id)] * embedding_weight])
+        for sample_id, features in zip(enriched["sample_id"], enriched["features"])
+    ]
+    return enriched
+
+
 def candidate_features(frame: pd.DataFrame, thresholds: list[float]) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     rows = []
     X = []
@@ -47,13 +62,19 @@ def candidate_features(frame: pd.DataFrame, thresholds: list[float]) -> tuple[np
         for threshold_idx, threshold in enumerate(thresholds):
             dice = float(record[f"dice_t{threshold:.2f}"])
             gain = dice - base_dice
+            candidate_morphology = np.asarray(record[f"features_t{threshold:.2f}"], dtype=np.float32)
             threshold_features = np.asarray([
                 threshold,
                 abs(threshold - 0.5),
                 threshold < 0.5,
                 threshold > 0.5,
             ], dtype=np.float32)
-            X.append(np.concatenate([base_features, threshold_features]))
+            X.append(np.concatenate([
+                base_features,
+                candidate_morphology,
+                candidate_morphology - base_features[: len(candidate_morphology)],
+                threshold_features,
+            ]))
             y.append(int(gain > 1e-6))
             rows.append({
                 "frame_idx": frame_idx,
@@ -145,6 +166,8 @@ def main():
     parser = argparse.ArgumentParser(description="Pairwise quantum-kernel threshold ranker")
     parser.add_argument("--baseline_dir", default="endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/quantum_threshold_pairwise_ranker_kvasir.csv")
+    parser.add_argument("--embedding_npz", default="")
+    parser.add_argument("--embedding_weight", type=float, default=1.0)
     parser.add_argument("--thresholds", type=float, nargs="+", default=[0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90])
     parser.add_argument("--models", nargs="+", default=["classical_logistic", "projected_quantum_kernel_svc", "classical_histgb"])
     parser.add_argument("--train_split", default="train")
@@ -158,7 +181,7 @@ def main():
     args = parser.parse_args()
 
     thresholds = sorted(args.thresholds)
-    frame = load_frame_table(Path(args.baseline_dir), thresholds)
+    frame = attach_embeddings(load_frame_table(Path(args.baseline_dir), thresholds), args.embedding_npz, args.embedding_weight)
     train_df = frame.loc[frame["split"].eq(args.train_split)].copy().reset_index(drop=True)
     tune_df = frame.loc[frame["split"].eq(args.tune_split)].copy().reset_index(drop=True)
     test_df = frame.loc[frame["split"].eq(args.test_split)].copy().reset_index(drop=True)

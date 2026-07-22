@@ -324,3 +324,34 @@ The next quantum-specific improvement should therefore add richer features
 before the quantum map: encoder embeddings, SAM embeddings, test-time
 augmentation consistency, or temporal consistency. Simple probability-map
 morphology alone does not give the quantum kernel enough signal.
+
+## Updated Quantum Selector With Candidate-Specific Morphology
+
+The pairwise quantum-kernel selector improves substantially when each threshold
+candidate is represented by its own inference-safe mask morphology features
+(candidate area, boundary fraction, connected components, uncertainty summaries)
+plus the difference from the fixed 0.50 mask. This gives the quantum kernel a
+direct representation of the mask hypothesis it is ranking.
+
+Kvasir test, train on Kvasir train and tune score threshold on Kvasir val:
+
+| Selector | Test Dice | Delta Dice | Hard Dice | Hard delta Dice | Changed frames |
+|---|---:|---:|---:|---:|---:|
+| Fixed threshold 0.50 | 0.8576 | +0.0000 | 0.5781 | +0.0000 | 0 |
+| Earlier classical logistic selector | 0.8601 | +0.0025 | 0.6010 | +0.0229 | 96 |
+| Projected quantum kernel selector | 0.8622 | +0.0046 | 0.5949 | +0.0169 | 73 |
+| Matched classical HistGB pairwise selector | 0.8599 | +0.0023 | 0.5839 | +0.0059 | 19 |
+| Oracle threshold selector | 0.8778 | +0.0202 | 0.6343 | +0.0562 | 97 |
+
+Interpretation: this is the strongest quantum-specific result so far. The
+projected quantum kernel selector now beats the matched classical pairwise
+controls and improves overall Dice more than the earlier classical logistic
+threshold selector. It does not yet beat the earlier classical logistic selector
+on hard-frame Dice, so the next step is repeated-seed validation and external
+CVC/PolypGen testing for the candidate-specific quantum selector.
+
+UNet encoder embeddings were also exported and tested, but naive concatenation
+of high-dimensional encoder features made the quantum selector too
+conservative. Learned embedding features may still help, but they likely need a
+separate low-dimensional reduction or consistency-derived summaries before
+entering the quantum kernel.
