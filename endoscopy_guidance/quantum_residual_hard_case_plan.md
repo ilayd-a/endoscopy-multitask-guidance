@@ -96,6 +96,11 @@ classical baseline.
     Dice/IoU/error features into the quantum repo.
   - Supports threshold sweeps for calibration diagnostics.
 
+- `export_unet_baseline_dataset.py`
+  - Exports the same checkpoint on split-folder or split-CSV datasets.
+  - This is the preferred exporter for the Kvasir train/val/test headline
+    experiment.
+
 - `build_residual_patch_dataset.py`
   - Samples false-positive, false-negative, boundary, uncertain, and correct
     patches from baseline predictions.
@@ -104,9 +109,10 @@ classical baseline.
 - `residual_patch_quantum_benchmark.py`
   - Compares classical residual classifiers with a projected-quantum feature
     residual classifier.
+  - Supports explicit `train_split` and `test_split` settings.
 
 - `apply_residual_mask_refinement.py`
-  - Trains a residual classifier on validation-side patch labels.
+  - Trains a residual classifier on a designated training split.
   - Selects add/remove thresholds on validation frames only.
   - Applies residual corrections back to every held-out test mask and reports
     full-frame Dice/IoU changes.
@@ -156,3 +162,44 @@ currently competitive with the matched classical residual model, but not yet
 clearly superior. The next publishability step is to strengthen the
 quantum-specific module and test it across Kvasir/CVC/PolypGen with paired
 statistics.
+
+## Corrected Kvasir Train/Val/Test Results
+
+The proper headline protocol should use all Kvasir splits:
+
+- Train residual patch models on Kvasir train.
+- Select mask add/remove thresholds on Kvasir validation.
+- Report full-frame Dice once on Kvasir test.
+
+Regenerated strong UNet baseline at threshold 0.5:
+
+| Split | Frames | Baseline Dice | Baseline IoU |
+|---|---:|---:|---:|
+| Kvasir train | 800 | 0.8971 | 0.8351 |
+| Kvasir val | 100 | 0.8917 | 0.8301 |
+| Kvasir test | 100 | 0.8576 | 0.7852 |
+
+Patch-level residual benchmark, train on Kvasir train and test on Kvasir test:
+
+| Model | Accuracy | Balanced accuracy | Macro F1 | Error F1 | Error AUC |
+|---|---:|---:|---:|---:|---:|
+| Classical HistGB | 0.724 | 0.722 | 0.714 | 0.878 | 0.939 |
+| Classical random forest | 0.724 | 0.723 | 0.716 | 0.875 | 0.937 |
+| Projected quantum HistGB | 0.715 | 0.710 | 0.705 | 0.871 | 0.932 |
+| Classical logistic | 0.717 | 0.712 | 0.707 | 0.869 | 0.932 |
+
+Full-mask residual refinement, train on Kvasir train, tune on Kvasir val, test
+on Kvasir test:
+
+| Model | Split | Baseline Dice | Refined Dice | Delta Dice | Hard baseline Dice | Hard refined Dice | Hard delta Dice |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Projected quantum HistGB | val | 0.8917 | 0.8920 | +0.0003 | 0.5694 | 0.5715 | +0.0021 |
+| Projected quantum HistGB | test | 0.8576 | 0.8582 | +0.0006 | 0.5781 | 0.5828 | +0.0047 |
+| Classical HistGB | val | 0.8917 | 0.8919 | +0.0002 | 0.5694 | 0.5699 | +0.0005 |
+| Classical HistGB | test | 0.8576 | 0.8581 | +0.0005 | 0.5781 | 0.5826 | +0.0045 |
+
+Interpretation: with the scientifically correct split, residual refinement is
+safe but conservative on a strong Kvasir baseline. The projected quantum model
+slightly exceeds the matched classical full-mask Dice improvement, but the
+margin is tiny. This should be treated as a baseline result to improve, not as
+the final publication claim.

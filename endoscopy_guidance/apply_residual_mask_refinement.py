@@ -235,6 +235,9 @@ def main():
     parser.add_argument("--empty_pred_area", type=float, default=0.002)
     parser.add_argument("--hard_dice_threshold", type=float, default=0.80)
     parser.add_argument("--threshold_grid", type=float, nargs="*", default=[0.45, 0.50, 0.55, 0.60, 0.65, 0.70])
+    parser.add_argument("--train_split", default="val")
+    parser.add_argument("--tune_split", default="val")
+    parser.add_argument("--test_split", default="test")
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
 
@@ -244,7 +247,9 @@ def main():
     X = payload["X"].astype(np.float32)
     y = payload["y"].astype(np.int64)
     patch_rows = pd.read_csv(args.rows_csv)
-    train_mask = patch_rows["split"].eq("val").to_numpy()
+    train_mask = patch_rows["split"].eq(args.train_split).to_numpy()
+    if not train_mask.any():
+        raise ValueError(f"No patch rows found for train_split={args.train_split}")
     X_train, y_train = limit_training(X[train_mask], y[train_mask], args.max_train, args.seed)
 
     if args.model == "projected_quantum_histgb":
@@ -267,22 +272,23 @@ def main():
 
     output = Path(args.output_dir) / args.model
     output.mkdir(parents=True, exist_ok=True)
-    cached_val = build_split_cache("val", base, metrics_df, args)
-    cached_test = build_split_cache("test", base, metrics_df, args)
-    cached_val = attach_probabilities(cached_val, fitted, "val")
-    cached_test = attach_probabilities(cached_test, fitted, "test")
-    remove_threshold, add_threshold, tune_table = tune_thresholds(cached_val, args)
-    val_frames, val_summary = evaluate_cached_split("val", cached_val, args, remove_threshold, add_threshold)
-    test_frames, test_summary = evaluate_cached_split("test", cached_test, args, remove_threshold, add_threshold)
-    for summary in (val_summary, test_summary):
+    cached_tune = build_split_cache(args.tune_split, base, metrics_df, args)
+    cached_test = build_split_cache(args.test_split, base, metrics_df, args)
+    cached_tune = attach_probabilities(cached_tune, fitted, args.tune_split)
+    cached_test = attach_probabilities(cached_test, fitted, args.test_split)
+    remove_threshold, add_threshold, tune_table = tune_thresholds(cached_tune, args)
+    tune_frames, tune_summary = evaluate_cached_split(args.tune_split, cached_tune, args, remove_threshold, add_threshold)
+    test_frames, test_summary = evaluate_cached_split(args.test_split, cached_test, args, remove_threshold, add_threshold)
+    for summary in (tune_summary, test_summary):
         summary["model"] = args.model
+        summary["train_split"] = args.train_split
         summary["remove_threshold"] = remove_threshold
         summary["add_threshold"] = add_threshold
-    pd.DataFrame([val_summary, test_summary]).to_csv(output / "summary.csv", index=False)
+    pd.DataFrame([tune_summary, test_summary]).to_csv(output / "summary.csv", index=False)
     tune_table.to_csv(output / "validation_threshold_tuning.csv", index=False)
-    pd.concat([val_frames, test_frames], axis=0).to_csv(output / "per_frame.csv", index=False)
+    pd.concat([tune_frames, test_frames], axis=0).to_csv(output / "per_frame.csv", index=False)
     print(f"[saved] {output / 'summary.csv'}")
-    print(pd.DataFrame([val_summary, test_summary]).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    print(pd.DataFrame([tune_summary, test_summary]).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
 
 
 if __name__ == "__main__":

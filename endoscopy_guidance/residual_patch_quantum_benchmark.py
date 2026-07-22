@@ -82,6 +82,8 @@ def main():
     parser.add_argument("--max_train", type=int, default=6000)
     parser.add_argument("--pqk_components", type=int, default=8)
     parser.add_argument("--pqk_reps", type=int, default=2)
+    parser.add_argument("--train_split", default="val")
+    parser.add_argument("--test_split", default="test")
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
 
@@ -89,8 +91,10 @@ def main():
     X = payload["X"].astype(np.float32)
     y = payload["y"].astype(np.int64)
     rows = pd.read_csv(args.rows_csv)
-    train_mask = rows["split"].eq("val").to_numpy()
-    test_mask = rows["split"].eq("test").to_numpy()
+    train_mask = rows["split"].eq(args.train_split).to_numpy()
+    test_mask = rows["split"].eq(args.test_split).to_numpy()
+    if not train_mask.any() or not test_mask.any():
+        raise ValueError(f"Missing train/test split rows: train={args.train_split}, test={args.test_split}")
     X_train, y_train = limit_training(X[train_mask], y[train_mask], args.max_train, args.seed)
     X_test, y_test = X[test_mask], y[test_mask]
 
