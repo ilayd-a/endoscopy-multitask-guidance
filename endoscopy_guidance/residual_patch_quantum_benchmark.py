@@ -74,6 +74,19 @@ def error_score(model, X: np.ndarray) -> np.ndarray | None:
     return None
 
 
+def quantum_feature_blocks(
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    components: int,
+    reps: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    X_train_q, X_test_q, pca_info = fit_low_dim(X_train, X_test, components, seed)
+    Z_train = projected_quantum_features(X_train_q, reps)
+    Z_test = projected_quantum_features(X_test_q, reps)
+    return Z_train, Z_test, pca_info
+
+
 def main():
     parser = argparse.ArgumentParser(description="Residual patch quantum benchmark")
     parser.add_argument("--dataset_npz", default="endoscopy_guidance/results/residual_patch_dataset_cvc_val_test.npz")
@@ -109,15 +122,24 @@ def main():
         pred = model.predict(X_test)
         results.append(metrics(name, y_test, pred, error_score(model, X_test)))
 
-    X_train_q, X_test_q, pca_info = fit_low_dim(X_train, X_test, args.pqk_components, args.seed)
-    Z_train = projected_quantum_features(X_train_q, args.pqk_reps)
-    Z_test = projected_quantum_features(X_test_q, args.pqk_reps)
+    Z_train, Z_test, pca_info = quantum_feature_blocks(
+        X_train, X_test, args.pqk_components, args.pqk_reps, args.seed
+    )
     q_model = HistGradientBoostingClassifier(max_iter=180, learning_rate=0.05, random_state=args.seed)
     q_model.fit(Z_train, y_train)
     q_pred = q_model.predict(Z_test)
     q_row = metrics("projected_quantum_histgb", y_test, q_pred, error_score(q_model, Z_test))
     q_row["pca_variance"] = pca_info["pca_variance_retained"]
     results.append(q_row)
+
+    H_train = np.concatenate([X_train, Z_train], axis=1)
+    H_test = np.concatenate([X_test, Z_test], axis=1)
+    h_model = HistGradientBoostingClassifier(max_iter=220, learning_rate=0.04, random_state=args.seed)
+    h_model.fit(H_train, y_train)
+    h_pred = h_model.predict(H_test)
+    h_row = metrics("hybrid_quantum_histgb", y_test, h_pred, error_score(h_model, H_test))
+    h_row["pca_variance"] = pca_info["pca_variance_retained"]
+    results.append(h_row)
 
     output = Path(args.output_csv)
     output.parent.mkdir(parents=True, exist_ok=True)

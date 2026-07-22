@@ -203,3 +203,35 @@ safe but conservative on a strong Kvasir baseline. The projected quantum model
 slightly exceeds the matched classical full-mask Dice improvement, but the
 margin is tiny. This should be treated as a baseline result to improve, not as
 the final publication claim.
+
+## Current Best Direction: Triggered Quantum Residual Refinement
+
+The stronger clinical framing is not to modify every frame. Instead:
+
+1. Train an inference-safe hard-frame trigger from probability-map and
+   predicted-mask morphology features.
+2. Train the residual correction model on Kvasir train patches.
+3. Tune trigger/action thresholds on Kvasir validation hard-frame Dice.
+4. Apply residual refinement only to triggered Kvasir test frames.
+
+This preserves easy frames while targeting the failure modes that matter for a
+real-time surgical guidance assistant.
+
+Kvasir train/val/test results with the hard-frame trigger:
+
+| Model | Split | Triggered frames | Baseline Dice | Refined Dice | Delta Dice | Hard baseline Dice | Hard refined Dice | Hard delta Dice |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Projected quantum HistGB | val | 7/100 | 0.8917 | 0.8921 | +0.0004 | 0.5694 | 0.5784 | +0.0090 |
+| Projected quantum HistGB | test | 4/100 | 0.8576 | 0.8594 | +0.0018 | 0.5781 | 0.5864 | +0.0083 |
+| Classical HistGB | val | 7/100 | 0.8917 | 0.8918 | +0.0001 | 0.5694 | 0.5734 | +0.0040 |
+| Classical HistGB | test | 4/100 | 0.8576 | 0.8584 | +0.0008 | 0.5781 | 0.5817 | +0.0036 |
+| Hybrid quantum HistGB | val | 7/100 | 0.8917 | 0.8923 | +0.0006 | 0.5694 | 0.5748 | +0.0055 |
+| Hybrid quantum HistGB | test | 4/100 | 0.8576 | 0.8592 | +0.0016 | 0.5781 | 0.5855 | +0.0075 |
+
+Interpretation: the hard-triggered projected quantum residual is currently the
+best variant. It improves Kvasir test Dice more than the matched classical
+triggered residual while touching only four test frames. The hard-frame gain is
+also larger (+0.0083 vs +0.0036). This is a much more plausible publication
+direction than full-frame residual correction applied indiscriminately, but it
+still needs repeated-seed validation, external CVC/PolypGen confirmation, and
+paired significance testing.
