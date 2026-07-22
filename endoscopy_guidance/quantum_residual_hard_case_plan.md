@@ -260,3 +260,27 @@ However, the nonparametric two-sided Wilcoxon test remains just above 0.05 with
 only five paired seeds. The result is promising, but the paper should still add
 more external frames and paired bootstrap/permutation tests before claiming a
 definitive improvement.
+
+## Larger-Gain Route: Mask-Hypothesis Selection
+
+The residual gains are consistent but numerically small because the baseline
+UNet is already strong and the trigger intentionally edits only a few frames.
+A higher-leverage route is to choose among multiple mask hypotheses per frame
+before residual cleanup.
+
+Initial Kvasir test threshold-selection results:
+
+| Method | Test Dice | Delta Dice | Hard Dice | Hard delta Dice |
+|---|---:|---:|---:|---:|
+| Fixed threshold 0.50 | 0.8576 | +0.0000 | 0.5781 | +0.0000 |
+| Classical logistic selector | 0.8601 | +0.0025 | 0.6010 | +0.0229 |
+| Hybrid quantum logistic selector | 0.8563 | -0.0013 | 0.5880 | +0.0100 |
+| Oracle threshold selector | 0.8778 | +0.0202 | 0.6343 | +0.0562 |
+
+Interpretation: threshold/hypothesis selection has much more headroom than
+pixel residual cleanup. The first quantum selectors underperform the classical
+logistic selector, so the next scientific target should be a stacked system:
+adaptive mask-hypothesis selection to get the larger hard-case gain, followed
+by triggered quantum residual refinement on the remaining high-risk frames.
+This keeps the quantum contribution clinically meaningful without pretending
+the current quantum threshold selector is already best.
