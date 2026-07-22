@@ -71,13 +71,27 @@ def residual_label(pred: int, gt: int) -> int:
     return 3
 
 
-def build_features(image: np.ndarray, prob: np.ndarray, pred: np.ndarray, gt: np.ndarray, y: int, x: int, radius: int) -> list[float]:
+def mask_centroid(mask: np.ndarray) -> tuple[float, float] | None:
+    pixels = np.column_stack(np.where(mask > 0))
+    if len(pixels) == 0:
+        return None
+    cy, cx = pixels.mean(axis=0)
+    return float(cy), float(cx)
+
+
+def build_features(
+    image_float: np.ndarray,
+    prob: np.ndarray,
+    pred: np.ndarray,
+    centroid: tuple[float, float] | None,
+    y: int,
+    x: int,
+    radius: int,
+) -> list[float]:
     uncertainty = 1.0 - abs(float(prob[y, x]) - 0.5) * 2.0
     h, w = prob.shape
-    yy, xx = np.mgrid[0:h, 0:w]
-    gt_pixels = np.column_stack(np.where(gt > 0))
-    if len(gt_pixels) > 0:
-        cy, cx = gt_pixels.mean(axis=0)
+    if centroid is not None:
+        cy, cx = centroid
         center_dist = float(np.hypot(y - cy, x - cx) / max(h, w))
     else:
         center_dist = 1.0
@@ -91,7 +105,7 @@ def build_features(image: np.ndarray, prob: np.ndarray, pred: np.ndarray, gt: np
     ]
     features.extend(local_stats(prob, y, x, radius))
     features.extend(local_stats(pred, y, x, radius))
-    features.extend(image_patch_stats(image / 255.0, y, x, radius))
+    features.extend(image_patch_stats(image_float, y, x, radius))
     return features
 
 
@@ -123,12 +137,14 @@ def main():
     y = []
 
     per_region = max(1, args.samples_per_frame // 6)
-    for record in metrics.itertuples(index=False):
+    for frame_idx, record in enumerate(metrics.itertuples(index=False), start=1):
         sid = record.sample_id
         image = np.load(base / "images" / f"{sid}.npy")
+        image_float = image.astype(np.float32) / 255.0
         gt = np.load(base / "gt_masks" / f"{sid}.npy").astype(np.uint8)
         prob = np.load(base / "prob_maps" / f"{sid}.npy").astype(np.float32)
         pred = np.load(base / "pred_masks" / f"{sid}.npy").astype(np.uint8)
+        centroid = mask_centroid(gt)
         uncertainty = 1.0 - np.abs(prob - 0.5) * 2.0
         regions = {
             "false_positive": (pred == 1) & (gt == 0),
@@ -152,7 +168,7 @@ def main():
                 continue
             seen.add(key)
             label = residual_label(int(pred[yy, xx]), int(gt[yy, xx]))
-            X.append(build_features(image, prob, pred, gt, yy, xx, args.patch_radius))
+            X.append(build_features(image_float, prob, pred, centroid, yy, xx, args.patch_radius))
             y.append(label)
             rows.append({
                 "sample_id": sid,
@@ -165,6 +181,8 @@ def main():
                 "pixel_x": xx,
                 "label": label,
             })
+        if frame_idx % 50 == 0 or frame_idx == len(metrics):
+            print(f"[patches] {frame_idx}/{len(metrics)} frames, rows={len(rows)}", flush=True)
 
     X_arr = np.asarray(X, dtype=np.float32)
     y_arr = np.asarray(y, dtype=np.int64)

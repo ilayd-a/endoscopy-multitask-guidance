@@ -1,7 +1,7 @@
 """
 export_classical_cvc_baseline.py
 ================================
-Export predictions from the strong classical UNet/ResNet34 CVC baseline in the
+Export predictions from the strong classical UNet/ResNet34 baseline in the
 endoscopy-multitask-guidance repo.
 
 The output is intentionally stored in the quantum repo so quantum residual and
@@ -122,7 +122,7 @@ def main():
     parser.add_argument("--source_repo", default="/Users/ilaydadilek/Documents/FAMS LAB/endoscopy-multitask-guidance")
     parser.add_argument("--checkpoint", default="")
     parser.add_argument("--split", choices=["train", "val", "test", "val_test", "all"], default="val_test")
-    parser.add_argument("--output_dir", default="endoscopy_guidance/results/classical_cvc_baseline_val_test")
+    parser.add_argument("--output_dir", default="endoscopy_guidance/results/strong_unet_pretrained_cvc_val_test")
     parser.add_argument("--image_size", type=int, default=256)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--threshold_sweep", type=float, nargs="*", default=[])
@@ -131,7 +131,7 @@ def main():
 
     source = Path(args.source_repo)
     cvc_dir = source / "dataset" / "CVC-ClinicDB"
-    checkpoint = Path(args.checkpoint) if args.checkpoint else source / "models" / "unet_cvc.pth"
+    checkpoint = Path(args.checkpoint) if args.checkpoint else source / "models" / "unet_pretrained.pth"
     metadata = pd.read_csv(cvc_dir / "metadata.csv")
     metadata = metadata.loc[split_mask(metadata, args.split)].sort_values(["sequence_id", "frame_id"]).reset_index(drop=True)
 

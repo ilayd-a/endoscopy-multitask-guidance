@@ -18,7 +18,7 @@ classical baseline. The quantum repo should consume exported baseline
 predictions, probability maps, and per-frame/per-patch error labels without
 modifying the source segmentation repo.
 
-The current local CVC checkpoint at:
+The weak local CVC-only checkpoint at:
 
 `/Users/ilaydadilek/Documents/FAMS LAB/endoscopy-multitask-guidance/models/unet_cvc.pth`
 
@@ -33,6 +33,16 @@ This suggests the local checkpoint is either not the intended strong baseline,
 was trained under a different preprocessing/data pairing, or is not suitable for
 the sequence-held-out CVC evaluation. Do not build the final quantum claim on
 this checkpoint.
+
+The intended stronger checkpoint has been recovered and pushed to the
+endoscopy repo branch:
+
+`/Users/ilaydadilek/Documents/FAMS LAB/endoscopy-multitask-guidance/models/unet_pretrained.pth`
+
+Older local evaluation artifacts for this checkpoint report Kvasir validation
+Dice around 0.917, Kvasir test Dice around 0.867, and all-CVC external Dice
+around 0.789. The quantum residual work should use this checkpoint as the
+classical baseline.
 
 ## Quantum Roles To Test
 
@@ -62,21 +72,21 @@ this checkpoint.
 - Full-frame Dice/IoU on all test frames.
 - Hard-case Dice/IoU on bottom-quartile baseline frames.
 - Boundary F1 or boundary Dice.
-- External validation on Kvasir-SEG and PolypGen.
+- External validation on CVC, Kvasir-SEG, and PolypGen.
 - Paired bootstrap/permutation tests against the classical baseline.
 - Latency/FPS measurement with and without the quantum module.
 
 ## Immediate Next Steps
 
-1. Locate or retrain the strong baseline checkpoint that achieves approximately
-   0.85-0.90 Dice on the intended validation/test split.
-2. Export predictions/logits/features with `export_classical_cvc_baseline.py`.
+1. Export Kvasir validation/test probability maps from `unet_pretrained.pth`.
+2. Add paired bootstrap/permutation tests for full-mask residual refinement.
 3. Build a patch-level residual dataset from baseline false positives and false
    negatives.
 4. Compare classical residual models against projected quantum-kernel residual
    models under the same train/val/test split.
-5. Apply the best residual correction to probability maps and evaluate full
-   segmentation Dice, hard-case Dice, and boundary metrics.
+5. Improve the quantum residual module beyond parity by adding richer
+   texture/shape features, sequence-aware validation, and quantum-kernel
+   hyperparameter search.
 
 ## Implemented Scaffold
 
@@ -94,8 +104,12 @@ this checkpoint.
 - `residual_patch_quantum_benchmark.py`
   - Compares classical residual classifiers with a projected-quantum feature
     residual classifier.
-  - Current diagnostic run is only a smoke test because the available CVC
-    checkpoint is not a strong baseline.
+
+- `apply_residual_mask_refinement.py`
+  - Trains a residual classifier on validation-side patch labels.
+  - Selects add/remove thresholds on validation frames only.
+  - Applies residual corrections back to every held-out test mask and reports
+    full-frame Dice/IoU changes.
 
 Smoke-test residual classifier results on the weak local CVC checkpoint:
 
@@ -110,3 +124,35 @@ Interpretation: the residual benchmark is operational, but the final study
 requires the stronger classical checkpoint. With the current weak checkpoint,
 the benchmark mostly proves that the pipeline can identify segmentation errors;
 it should not be used for the headline result.
+
+## Strong-Checkpoint CVC Residual Results
+
+Using `unet_pretrained.pth`, CVC frames were exported into
+`strong_unet_pretrained_cvc_all`. The sequence split is intentionally harsh:
+546 earlier frames are used for residual training/validation and 66 late frames
+are held out for final testing.
+
+Patch-level residual benchmark on held-out CVC test patches:
+
+| Model | Accuracy | Balanced accuracy | Macro F1 | Error F1 | Error AUC |
+|---|---:|---:|---:|---:|---:|
+| Projected quantum HistGB | 0.670 | 0.685 | 0.643 | 0.865 | 0.943 |
+| Classical random forest | 0.671 | 0.688 | 0.646 | 0.863 | 0.940 |
+| Classical HistGB | 0.670 | 0.703 | 0.650 | 0.862 | 0.946 |
+| Classical logistic | 0.666 | 0.697 | 0.647 | 0.861 | 0.942 |
+
+Full-mask residual refinement after validation-only threshold tuning:
+
+| Model | Split | Baseline Dice | Refined Dice | Delta Dice | Hard baseline Dice | Hard refined Dice | Hard delta Dice |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Projected quantum HistGB | val | 0.8316 | 0.8394 | +0.0078 | 0.5031 | 0.5437 | +0.0406 |
+| Projected quantum HistGB | test | 0.6356 | 0.6496 | +0.0140 | 0.5285 | 0.5596 | +0.0311 |
+| Classical HistGB | val | 0.8316 | 0.8447 | +0.0132 | 0.5031 | 0.5524 | +0.0493 |
+| Classical HistGB | test | 0.6356 | 0.6489 | +0.0133 | 0.5285 | 0.5603 | +0.0318 |
+
+Interpretation: the residual-refinement direction is real and improves
+full-frame segmentation, especially hard frames. The quantum feature map is
+currently competitive with the matched classical residual model, but not yet
+clearly superior. The next publishability step is to strengthen the
+quantum-specific module and test it across Kvasir/CVC/PolypGen with paired
+statistics.
