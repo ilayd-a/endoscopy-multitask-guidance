@@ -391,3 +391,39 @@ improves the strong UNet baseline most on hard frames and beats matched
 pairwise classical controls in the same 13-threshold ranking protocol. The
 stronger three-threshold random-forest result should be treated as a classical
 upper control that motivates better quantum gating, not as the quantum headline.
+
+## Hard-Case Routed Compact Quantum Selector
+
+A more clinically targeted variant was added after the quantum-gate experiment:
+use a compact random-forest threshold proposer as the default policy, then use
+a validation-tuned hard-case router to send only likely hard frames to a compact
+projected-quantum selector. The compact thresholds are intentionally
+interpretable: `0.30` for under-segmentation rescue, `0.50` for the standard
+UNet mask, and `0.90` for over-segmentation correction.
+
+Held-out Kvasir test results:
+
+| Method | Test Dice | Delta Dice | Hard Dice | Hard delta Dice | Changed frames |
+|---|---:|---:|---:|---:|---:|
+| Fixed threshold 0.50 | 0.8576 | +0.0000 | 0.5781 | +0.0000 | 0 |
+| Compact RF proposer | 0.8642 | +0.0066 | 0.6065 | +0.0284 | 66 |
+| Routed classical logistic selector | 0.8636 | +0.0060 | 0.6038 | +0.0258 | 67 |
+| Routed classical HistGB selector | 0.8642 | +0.0066 | 0.6065 | +0.0284 | 66 |
+| Routed classical RF selector | 0.8621 | +0.0045 | 0.6045 | +0.0264 | 67 |
+| Hard-routed projected quantum logistic selector | 0.8664 | +0.0088 | 0.6164 | +0.0384 | 67 |
+| Compact oracle threshold | 0.8765 | +0.0189 | 0.6312 | +0.0532 | 79 |
+
+Paired statistics for the routed quantum selector versus fixed 0.50:
+
+| Subset | Mean delta | 95% bootstrap CI | Sign-flip p | Wilcoxon p |
+|---|---:|---:|---:|---:|
+| All frames | +0.00877 | [+0.00122, +0.01746] | 0.0375 | 0.0785 |
+| Hard frames | +0.03835 | [+0.00821, +0.07205] | 0.0391 | 0.1187 |
+
+Interpretation: this is the best current performance and the most clinically
+plausible quantum role so far: a quantum compact selector acts as a rare
+hard-case rescue module on top of a strong classical proposer. The improvement
+over the RF proposer is driven by one routed test frame, so this should not yet
+be claimed as statistically stronger than RF. The next improvement target is
+to raise hard-router coverage on validation/external data while preserving
+easy-frame Dice.
