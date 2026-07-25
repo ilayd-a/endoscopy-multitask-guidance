@@ -32,7 +32,7 @@ if str(EBTC_EXPERIMENTS) not in sys.path:
     sys.path.insert(0, str(EBTC_EXPERIMENTS))
 
 from publication_benchmark_ebtc import ProjectedQuantumKernelSVC
-from quantum_mask_hypothesis_selector import load_frame_table, selected_dice
+from quantum_mask_hypothesis_selector import load_frame_table, selector_frame_rows, selected_dice
 
 
 def attach_embeddings(frame: pd.DataFrame, embedding_npz: str, embedding_weight: float) -> pd.DataFrame:
@@ -50,7 +50,24 @@ def attach_embeddings(frame: pd.DataFrame, embedding_npz: str, embedding_weight:
     return enriched
 
 
-def candidate_features(frame: pd.DataFrame, thresholds: list[float]) -> tuple[np.ndarray, np.ndarray, list[dict]]:
+def threshold_curve_features(record: pd.Series, threshold_idx: int, thresholds: list[float]) -> np.ndarray:
+    """Inference-safe local shape descriptors for the candidate threshold."""
+    candidate = np.asarray(record[f"features_t{thresholds[threshold_idx]:.2f}"], dtype=np.float32)
+    threshold_stack = np.asarray(
+        [record[f"features_t{threshold:.2f}"] for threshold in thresholds],
+        dtype=np.float32,
+    )
+    lower = threshold_stack[max(0, threshold_idx - 1)]
+    upper = threshold_stack[min(len(thresholds) - 1, threshold_idx + 1)]
+    mean = threshold_stack.mean(axis=0)
+    std = threshold_stack.std(axis=0) + 1e-6
+    curve_position = (candidate - mean) / std
+    local_slope = lower - upper
+    local_curvature = lower - (2.0 * candidate) + upper
+    return np.concatenate([candidate, curve_position, local_slope, local_curvature]).astype(np.float32)
+
+
+def candidate_features(frame: pd.DataFrame, thresholds: list[float], feature_mode: str = "candidate") -> tuple[np.ndarray, np.ndarray, list[dict]]:
     rows = []
     X = []
     y = []
@@ -63,18 +80,25 @@ def candidate_features(frame: pd.DataFrame, thresholds: list[float]) -> tuple[np
             dice = float(record[f"dice_t{threshold:.2f}"])
             gain = dice - base_dice
             candidate_morphology = np.asarray(record[f"features_t{threshold:.2f}"], dtype=np.float32)
-            threshold_features = np.asarray([
+            candidate_curve = threshold_curve_features(record, threshold_idx, thresholds)
+            threshold_values = [
                 threshold,
                 abs(threshold - 0.5),
                 threshold < 0.5,
                 threshold > 0.5,
-            ], dtype=np.float32)
-            X.append(np.concatenate([
-                base_features,
-                candidate_morphology,
-                candidate_morphology - base_features[: len(candidate_morphology)],
-                threshold_features,
-            ]))
+            ]
+            if feature_mode != "legacy_candidate":
+                threshold_values.append(threshold_idx / max(1, len(thresholds) - 1))
+            threshold_features = np.asarray(threshold_values, dtype=np.float32)
+            pieces = [base_features, threshold_features]
+            if feature_mode in {"legacy_candidate", "candidate", "curve"}:
+                pieces.insert(1, candidate_morphology)
+                pieces.insert(2, candidate_morphology - base_features[: len(candidate_morphology)])
+            if feature_mode == "curve":
+                pieces.insert(3, candidate_curve)
+            if feature_mode not in {"base", "legacy_candidate", "candidate", "curve"}:
+                raise ValueError(f"Unknown feature_mode={feature_mode}")
+            X.append(np.concatenate(pieces))
             y.append(int(gain > 1e-6))
             rows.append({
                 "frame_idx": frame_idx,
@@ -115,7 +139,43 @@ class LowDimProjectedQuantumSVC:
         return self.model.predict_proba(self.transform(X))
 
 
-def make_model(name: str, components: int, reps: int, seed: int):
+class ProjectedQuantumKernelEnsemble:
+    def __init__(self, configs: list[tuple[int, int]], seed: int):
+        self.configs = configs
+        self.seed = seed
+        self.models = [
+            LowDimProjectedQuantumSVC(components, reps, seed + idx, C=1.0)
+            for idx, (components, reps) in enumerate(configs)
+        ]
+        self.classes_ = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        for model in self.models:
+            model.fit(X, y)
+        classes = [tuple(model.model.model.classes_) for model in self.models]
+        if len(set(classes)) != 1:
+            raise ValueError(f"Quantum ensemble class mismatch: {classes}")
+        self.classes_ = np.asarray(classes[0])
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        probs = [model.predict_proba(X) for model in self.models]
+        return np.mean(probs, axis=0)
+
+
+def parse_ensemble_configs(text: str) -> list[tuple[int, int]]:
+    configs = []
+    for chunk in text.split(","):
+        if not chunk:
+            continue
+        components_text, reps_text = chunk.lower().split("x")
+        configs.append((int(components_text), int(reps_text)))
+    if not configs:
+        raise ValueError("At least one ensemble config is required")
+    return configs
+
+
+def make_model(name: str, components: int, reps: int, seed: int, ensemble_configs: str = ""):
     if name == "classical_logistic":
         return make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, class_weight="balanced"))
     if name == "classical_histgb":
@@ -124,12 +184,14 @@ def make_model(name: str, components: int, reps: int, seed: int):
         return RandomForestClassifier(n_estimators=300, min_samples_leaf=3, class_weight="balanced_subsample", random_state=seed, n_jobs=-1)
     if name == "projected_quantum_kernel_svc":
         return LowDimProjectedQuantumSVC(components, reps, seed, C=1.0)
+    if name == "projected_quantum_kernel_ensemble":
+        return ProjectedQuantumKernelEnsemble(parse_ensemble_configs(ensemble_configs), seed)
     raise ValueError(f"Unknown model={name}")
 
 
 def choose_thresholds(model, X_eval: np.ndarray, rows: list[dict], n_frames: int, thresholds: list[float], min_score: float) -> np.ndarray:
     probs = model.predict_proba(X_eval)
-    classes = list(model.classes_) if hasattr(model, "classes_") else list(model.model.model.classes_)
+    classes = list(model.classes_) if getattr(model, "classes_", None) is not None else list(model.model.model.classes_)
     positive_col = classes.index(1) if 1 in classes else int(np.argmax(classes))
     scores = probs[:, positive_col]
     fixed_idx = thresholds.index(0.5)
@@ -162,10 +224,24 @@ def evaluate(name: str, eval_df: pd.DataFrame, selected: np.ndarray, thresholds:
     }
 
 
+def selector_score(row: dict, objective: str) -> tuple[float, ...]:
+    if objective == "overall":
+        return (row["selected_dice"], row["hard_selected_dice"])
+    if objective == "hard":
+        return (row["hard_selected_dice"], row["selected_dice"])
+    if objective == "combined":
+        hard = row["hard_selected_dice"]
+        if np.isnan(hard):
+            hard = row["selected_dice"]
+        return (0.5 * row["selected_dice"] + 0.5 * hard, row["selected_dice"])
+    raise ValueError(f"Unknown selection_objective={objective}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pairwise quantum-kernel threshold ranker")
     parser.add_argument("--baseline_dir", default="endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/quantum_threshold_pairwise_ranker_kvasir.csv")
+    parser.add_argument("--per_frame_csv", default="")
     parser.add_argument("--embedding_npz", default="")
     parser.add_argument("--embedding_weight", type=float, default=1.0)
     parser.add_argument("--thresholds", type=float, nargs="+", default=[0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90])
@@ -174,8 +250,11 @@ def main():
     parser.add_argument("--tune_split", default="val")
     parser.add_argument("--test_split", default="test")
     parser.add_argument("--min_score_grid", type=float, nargs="+", default=[0.50, 0.55, 0.60, 0.65, 0.70, 0.75])
+    parser.add_argument("--selection_objective", choices=["overall", "hard", "combined"], default="combined")
+    parser.add_argument("--feature_mode", choices=["base", "legacy_candidate", "candidate", "curve"], default="legacy_candidate")
     parser.add_argument("--pqk_components", type=int, default=8)
     parser.add_argument("--pqk_reps", type=int, default=2)
+    parser.add_argument("--ensemble_configs", default="3x2,3x3,4x3")
     parser.add_argument("--hard_dice_threshold", type=float, default=0.80)
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
@@ -185,24 +264,27 @@ def main():
     train_df = frame.loc[frame["split"].eq(args.train_split)].copy().reset_index(drop=True)
     tune_df = frame.loc[frame["split"].eq(args.tune_split)].copy().reset_index(drop=True)
     test_df = frame.loc[frame["split"].eq(args.test_split)].copy().reset_index(drop=True)
-    X_train, y_train, _ = candidate_features(train_df, thresholds)
-    X_tune, _, tune_rows = candidate_features(tune_df, thresholds)
-    X_test, _, test_rows = candidate_features(test_df, thresholds)
+    X_train, y_train, _ = candidate_features(train_df, thresholds, args.feature_mode)
+    X_tune, _, tune_rows = candidate_features(tune_df, thresholds, args.feature_mode)
+    X_test, _, test_rows = candidate_features(test_df, thresholds, args.feature_mode)
 
     results = []
+    frame_outputs = []
     fixed = np.full(len(test_df), thresholds.index(0.5), dtype=np.int64)
     results.append(evaluate("fixed_threshold_0.50", test_df, fixed, thresholds, args.hard_dice_threshold))
+    frame_outputs.append(selector_frame_rows("fixed_threshold_0.50", test_df, fixed, thresholds))
     oracle = test_df["best_threshold_index"].to_numpy(dtype=np.int64)
     results.append(evaluate("oracle_threshold", test_df, oracle, thresholds, args.hard_dice_threshold))
+    frame_outputs.append(selector_frame_rows("oracle_threshold", test_df, oracle, thresholds))
 
     for model_name in args.models:
-        model = make_model(model_name, args.pqk_components, args.pqk_reps, args.seed)
+        model = make_model(model_name, args.pqk_components, args.pqk_reps, args.seed, args.ensemble_configs)
         model.fit(X_train, y_train)
         best = None
         for min_score in args.min_score_grid:
             tune_selected = choose_thresholds(model, X_tune, tune_rows, len(tune_df), thresholds, min_score)
             row = evaluate(model_name, tune_df, tune_selected, thresholds, args.hard_dice_threshold)
-            score = (row["hard_selected_dice"], row["selected_dice"])
+            score = selector_score(row, args.selection_objective)
             if best is None or score > best[0]:
                 best = (score, min_score)
         min_score = best[1]
@@ -210,12 +292,16 @@ def main():
         row = evaluate(model_name, test_df, test_selected, thresholds, args.hard_dice_threshold)
         row["min_score"] = float(min_score)
         results.append(row)
+        frame_outputs.append(selector_frame_rows(model_name, test_df, test_selected, thresholds))
 
     output = Path(args.output_csv)
     output.parent.mkdir(parents=True, exist_ok=True)
     summary = pd.DataFrame(results).sort_values(["selected_dice", "hard_selected_dice"], ascending=False)
     summary.to_csv(output, index=False)
+    per_frame = Path(args.per_frame_csv) if args.per_frame_csv else output.with_name(output.stem + "_per_frame.csv")
+    pd.concat(frame_outputs, ignore_index=True).to_csv(per_frame, index=False)
     print(f"[saved] {output}")
+    print(f"[saved] {per_frame}")
     print(summary.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
 
 

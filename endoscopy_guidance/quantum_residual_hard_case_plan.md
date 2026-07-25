@@ -355,3 +355,39 @@ of high-dimensional encoder features made the quantum selector too
 conservative. Learned embedding features may still help, but they likely need a
 separate low-dimensional reduction or consistency-derived summaries before
 entering the quantum kernel.
+
+## Selector Improvement and Statistical Check
+
+Additional selector variants were tested after the candidate-specific quantum
+result:
+
+| Variant | Test Dice | Delta Dice | Hard Dice | Hard delta Dice | Interpretation |
+|---|---:|---:|---:|---:|---|
+| Projected quantum kernel, legacy candidate features, c3/r3 | 0.8622 | +0.0046 | 0.5949 | +0.0169 | Best current quantum-specific result |
+| Projected quantum kernel, threshold-curve features | 0.8606 | +0.0030 | 0.5899 | +0.0118 | Richer curve features helped classical controls more than quantum |
+| Projected quantum kernel ensemble, configs 3x2/3x3/4x3 | 0.8611 | +0.0036 | 0.5921 | +0.0140 | Stabilized predictions but did not beat c3/r3 |
+| Three-threshold quantum selector, thresholds 0.30/0.50/0.90 | 0.8600 | +0.0024 | 0.5856 | +0.0075 | Compact hypothesis set underused by quantum |
+| Three-threshold classical random forest | 0.8642 | +0.0066 | 0.6065 | +0.0284 | Strong non-quantum control, useful as a benchmark |
+
+The oracle distribution shows why threshold selection has headroom: on the
+held-out Kvasir test split, the best threshold is often extreme (45/100 frames
+prefer 0.30 and 21/100 prefer 0.90). However, the compact three-threshold task
+currently favors a random forest rather than the projected quantum kernel, so
+the quantum claim should stay with the 13-threshold candidate-specific ranker.
+
+Paired statistics for the best quantum ranker (`c3/r3`, legacy candidate
+features, hard-frame validation tuning):
+
+| Comparison | Subset | Mean delta | 95% bootstrap CI | Sign-flip p | Wilcoxon p |
+|---|---|---:|---:|---:|---:|
+| Quantum selector vs fixed 0.50 | all | +0.00458 | [+0.00128, +0.00835] | 0.0108 | 0.0594 |
+| Quantum selector vs fixed 0.50 | hard | +0.01689 | [+0.00482, +0.03076] | 0.0180 | 0.0193 |
+| Quantum selector - classical random forest | all | +0.00343 | [+0.00050, +0.00672] | 0.0323 | 0.2156 |
+| Quantum selector - classical random forest | hard | +0.01160 | [+0.00299, +0.02104] | 0.0216 | 0.1117 |
+| Quantum selector - classical HistGB | hard | +0.01104 | [+0.00045, +0.02383] | 0.0844 | 0.0909 |
+
+Interpretation: the best current quantum result is modest but defensible. It
+improves the strong UNet baseline most on hard frames and beats matched
+pairwise classical controls in the same 13-threshold ranking protocol. The
+stronger three-threshold random-forest result should be treated as a classical
+upper control that motivates better quantum gating, not as the quantum headline.
