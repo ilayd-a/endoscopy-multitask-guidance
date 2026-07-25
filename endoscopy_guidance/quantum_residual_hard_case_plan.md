@@ -427,3 +427,39 @@ over the RF proposer is driven by one routed test frame, so this should not yet
 be claimed as statistically stronger than RF. The next improvement target is
 to raise hard-router coverage on validation/external data while preserving
 easy-frame Dice.
+
+## External and Out-of-Fold Significance Check
+
+Kvasir-trained threshold policies were also evaluated on the exported CVC
+baseline. When applied to all 612 CVC frames without CVC-specific calibration,
+the compact threshold policies over-changed masks and reduced overall Dice. This
+is an important negative result: Kvasir-tuned calibration does not transfer
+directly to the full CVC distribution.
+
+To test whether the idea works when calibrated to the target endoscopy
+distribution, a 5-fold out-of-fold CVC experiment was added. The fixed UNet
+probability maps are unchanged; only the compact threshold selector is trained
+on four folds and evaluated once on the held-out fold.
+
+Out-of-fold CVC results, 612 frames:
+
+| Method | Dice | Delta Dice | Hard Dice | Hard delta Dice | Changed frames |
+|---|---:|---:|---:|---:|---:|
+| Fixed threshold 0.50 | 0.8105 | +0.0000 | 0.5102 | +0.0000 | 0 |
+| Projected quantum logistic selector | 0.8119 | +0.0014 | 0.5347 | +0.0245 | 389 |
+| Classical HistGB selector | 0.8130 | +0.0026 | 0.5350 | +0.0248 | 485 |
+| Classical RF selector | 0.8131 | +0.0026 | 0.5355 | +0.0253 | 480 |
+| Oracle threshold | 0.8353 | +0.0248 | 0.5710 | +0.0608 | 453 |
+
+Paired statistics for projected quantum logistic versus fixed 0.50 on OOF CVC:
+
+| Subset | Mean delta | 95% bootstrap CI | Sign-flip p | Wilcoxon p |
+|---|---:|---:|---:|---:|
+| All frames | +0.00140 | [-0.00359, +0.00630] | 0.5813 | 0.2820 |
+| Hard frames | +0.02453 | [+0.01154, +0.03765] | 0.0002 | 0.000084 |
+
+Interpretation: this gives a statistically strong hard-case improvement for
+quantum calibration, but it still does not show superiority over the best
+classical calibrators. A publishable claim should therefore focus on hard-case
+calibration significance and rigorous comparison, or the project needs a new
+quantum mechanism that beats RF/HistGB rather than matching them.

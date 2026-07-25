@@ -83,12 +83,14 @@ def frame_rows(name: str, frame: pd.DataFrame, selected: np.ndarray, thresholds:
 def main():
     parser = argparse.ArgumentParser(description="Hard-routed compact quantum threshold selector")
     parser.add_argument("--baseline_dir", default="endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test")
+    parser.add_argument("--external_baseline_dir", default="")
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/quantum_threshold_hard_router_kvasir.csv")
     parser.add_argument("--per_frame_csv", default="")
     parser.add_argument("--thresholds", type=float, nargs="+", default=[0.30, 0.50, 0.90])
     parser.add_argument("--train_split", default="train")
     parser.add_argument("--tune_split", default="val")
     parser.add_argument("--test_split", default="test")
+    parser.add_argument("--external_test_split", default="all")
     parser.add_argument("--proposer_min_score_grid", type=float, nargs="+", default=[0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80])
     parser.add_argument("--router_score_grid", type=float, nargs="+", default=[0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90])
     parser.add_argument("--selection_objective", choices=["overall", "hard", "combined"], default="overall")
@@ -109,7 +111,17 @@ def main():
     frame = load_frame_table(Path(args.baseline_dir), thresholds)
     X_train, y_train, train_df = split_arrays(frame, args.train_split)
     X_tune, _, tune_df = split_arrays(frame, args.tune_split)
-    X_test, _, test_df = split_arrays(frame, args.test_split)
+    if args.external_baseline_dir:
+        external_frame = load_frame_table(Path(args.external_baseline_dir), thresholds)
+        if args.external_test_split == "all":
+            test_df = external_frame.copy().reset_index(drop=True)
+            X_test = np.asarray(test_df["features"].tolist(), dtype=np.float32)
+        elif args.external_test_split in set(external_frame["split"]):
+            X_test, _, test_df = split_arrays(external_frame, args.external_test_split)
+        else:
+            raise ValueError(f"external_test_split={args.external_test_split!r} not found")
+    else:
+        X_test, _, test_df = split_arrays(frame, args.test_split)
 
     pair_X_train, pair_y_train, train_rows = candidate_features(train_df, thresholds, "legacy_candidate")
     pair_X_tune, _, tune_rows = candidate_features(tune_df, thresholds, "legacy_candidate")
