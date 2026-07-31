@@ -726,3 +726,43 @@ between the strong UNet and the stronger classical SAM prompt expert. The gap to
 the oracle best-of-two policy is still large, so the next improvement target is
 better confidence calibration, not a stronger standalone quantum segmentation
 model.
+
+### Strong-Kvasir Baseline Check
+
+The side-by-side fusion result above used the external CVC test split, where
+the fixed UNet Dice is much lower than the Kvasir UNet baseline. To check the
+intended high-performing setting, the fusion script was extended with
+`--split_mode random_source` so single-split prompt-quality caches can be split
+deterministically by source file. This was run on the 120-frame Kvasir prompt
+cache matched to the strong Kvasir UNet export.
+
+Full 120-frame overlap:
+
+| Quantity | Dice |
+|---|---:|
+| Strong UNet | 0.8916 |
+| Best SAM prompt oracle | 0.8102 |
+| Oracle best of UNet/SAM | 0.9165 |
+| Hard-frame UNet | 0.6135 |
+| Hard-frame best of UNet/SAM | 0.7590 |
+
+Ten deterministic random-source splits, each with 72 train / 24 validation /
+24 test frames:
+
+| Policy | Dice | Delta vs UNet | Expert rate | Hard Dice | Hard delta vs UNet |
+|---|---:|---:|---:|---:|---:|
+| Always UNet | 0.8837 | +0.0000 | 0.000 | 0.5599 | +0.0000 |
+| Oracle best of UNet/classical SAM | 0.9013 | +0.0176 | 0.121 | 0.6577 | +0.0978 |
+| Classical confidence switch | 0.8726 | -0.0110 | 0.104 | 0.5295 | -0.0304 |
+| Classical learned switch | 0.8689 | -0.0148 | 0.163 | 0.5068 | -0.0531 |
+| Quantum confidence switch | 0.8623 | -0.0213 | 0.163 | 0.5217 | -0.0381 |
+| Quantum learned switch | 0.8701 | -0.0136 | 0.117 | 0.5134 | -0.0465 |
+
+Interpretation: on the high-performing Kvasir baseline, the UNet is already so
+strong that naive confidence fusion is not safe. There is still meaningful
+oracle headroom, especially on hard frames, but the current confidence models
+do not identify those switch-worthy frames reliably from only 120 prompt-cache
+frames. This suggests the publishable direction should use the CVC/external
+setting for demonstrated fusion gains, while framing Kvasir as evidence that
+high-baseline deployment needs stronger calibration, more prompt labels, or
+temporally/grouped confidence modeling before automatic switching.

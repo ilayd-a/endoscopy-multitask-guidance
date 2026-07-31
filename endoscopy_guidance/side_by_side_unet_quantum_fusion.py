@@ -25,7 +25,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
@@ -50,14 +54,41 @@ def load_inputs(prompt_quality_csv: Path, features_path: Path, unet_metrics_csv:
     if len(qdf) != len(X):
         raise ValueError(f"Prompt cache mismatch: {len(qdf)} rows but {len(X)} feature rows")
     unet = pd.read_csv(unet_metrics_csv)
+    keep = qdf["source_file"].astype(str).isin(set(unet["source_file"].astype(str)))
+    qdf = qdf.loc[keep].copy().reset_index(drop=True)
+    X = X[keep.to_numpy()]
+    if qdf.empty:
+        raise ValueError("No prompt-quality rows match the UNet metrics by source_file")
     return qdf, X, unet
 
 
-def split_masks(qdf: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def split_masks(qdf: pd.DataFrame, mode: str, seed: int, train_fraction: float, val_fraction: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    splits = set(qdf["split"].astype(str).unique())
+    if mode == "auto":
+        mode = "existing" if {"train", "val", "test"}.issubset(splits) else "random_source"
+    if mode == "existing":
+        return (
+            qdf["sequence_id"].le(23).to_numpy(),
+            qdf["split"].eq("val").to_numpy(),
+            qdf["split"].eq("test").to_numpy(),
+        )
+    if mode != "random_source":
+        raise ValueError(f"Unknown split_mode={mode}")
+    rng = np.random.default_rng(seed)
+    sources = np.asarray(sorted(qdf["source_file"].astype(str).unique()), dtype=object)
+    rng.shuffle(sources)
+    n_train = max(1, int(round(len(sources) * train_fraction)))
+    n_val = max(1, int(round(len(sources) * val_fraction)))
+    if n_train + n_val >= len(sources):
+        raise ValueError("train_fraction + val_fraction leaves no test sources")
+    train_sources = set(sources[:n_train].tolist())
+    val_sources = set(sources[n_train:n_train + n_val].tolist())
+    test_sources = set(sources[n_train + n_val:].tolist())
+    source_values = qdf["source_file"].astype(str)
     return (
-        qdf["sequence_id"].le(23).to_numpy(),
-        qdf["split"].eq("val").to_numpy(),
-        qdf["split"].eq("test").to_numpy(),
+        source_values.isin(train_sources).to_numpy(),
+        source_values.isin(val_sources).to_numpy(),
+        source_values.isin(test_sources).to_numpy(),
     )
 
 
@@ -158,6 +189,44 @@ def policy_metrics(name: str, rows: pd.DataFrame, use_expert: np.ndarray) -> dic
     }
 
 
+def switch_feature_matrix(rows: pd.DataFrame, include_quantum: bool) -> np.ndarray:
+    pieces = [
+        rows["predicted_expert_quality"].to_numpy(dtype=float),
+        rows["predicted_unet_quality"].to_numpy(dtype=float),
+        rows["predicted_expert_quality"].to_numpy(dtype=float) - rows["predicted_unet_quality"].to_numpy(dtype=float),
+        rows["score_margin"].to_numpy(dtype=float),
+        rows["score_margin_norm"].to_numpy(dtype=float),
+    ]
+    if include_quantum and "quantum_candidate_quality" in rows:
+        pieces.extend([
+            rows["quantum_candidate_quality"].to_numpy(dtype=float),
+            rows["quantum_agreement"].to_numpy(dtype=float),
+            rows["quantum_candidate_quality"].to_numpy(dtype=float) - rows["predicted_unet_quality"].to_numpy(dtype=float),
+        ])
+    return np.column_stack(pieces).astype(np.float32)
+
+
+def fit_learned_switch(train_rows: pd.DataFrame, include_quantum: bool, seed: int):
+    X = switch_feature_matrix(train_rows, include_quantum)
+    y = (train_rows["expert_dice"].to_numpy(dtype=float) > train_rows["unet_dice"].to_numpy(dtype=float)).astype(np.int64)
+    if len(np.unique(y)) < 2:
+        model = DummyClassifier(strategy="constant", constant=int(y[0]))
+    else:
+        model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, class_weight="balanced", random_state=seed))
+    model.fit(X, y)
+    return model
+
+
+def positive_probability(model, X: np.ndarray) -> np.ndarray:
+    if hasattr(model, "classes_"):
+        classes = list(model.classes_)
+    else:
+        classes = list(model[-1].classes_)
+    if 1 not in classes:
+        return np.zeros(len(X), dtype=np.float32)
+    return model.predict_proba(X)[:, classes.index(1)]
+
+
 def tune_switch_threshold(val_rows: pd.DataFrame, score: np.ndarray, min_expert_rate: float, max_expert_rate: float) -> tuple[float, dict]:
     thresholds = np.unique(np.quantile(score, np.linspace(0, 1, 101)))
     thresholds = np.concatenate([thresholds, [float(np.max(score) + 1e-6)]])
@@ -209,12 +278,16 @@ def evaluate_expert(
     unet_quality_model,
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
+    train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
     val_df = qdf.loc[val_mask].copy().reset_index(drop=True)
     test_df = qdf.loc[test_mask].copy().reset_index(drop=True)
+    train_scores = prompt_model.predict(X[train_mask])
     val_scores = prompt_model.predict(X[val_mask])
     test_scores = prompt_model.predict(X[test_mask])
+    train_rows = selected_prompt_rows(train_df, train_scores, expert_name)
     val_rows = selected_prompt_rows(val_df, val_scores, expert_name)
     test_rows = selected_prompt_rows(test_df, test_scores, expert_name)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"]))
     val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"]))
     test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"]))
 
@@ -227,6 +300,11 @@ def evaluate_expert(
     rows.append({**policy_metrics(f"{expert_name}:always_expert", test_rows, np.ones(len(test_rows), dtype=bool)), "expert": expert_name, "threshold": -np.inf})
     rows.append({**policy_metrics(f"{expert_name}:oracle_best_of_two", test_rows, test_rows["expert_dice"].to_numpy(dtype=float) > test_rows["unet_dice"].to_numpy(dtype=float)), "expert": expert_name, "threshold": np.nan})
     rows.append({**policy_metrics(f"{expert_name}:val_confidence_switch", test_rows, test_switch_score >= threshold), "expert": expert_name, "threshold": threshold, "val_tuned_dice": val_tune["selected_dice"], "val_expert_rate": val_tune["expert_rate"]})
+    switch = fit_learned_switch(train_rows, include_quantum=False, seed=args.seed)
+    val_learned_score = positive_probability(switch, switch_feature_matrix(val_rows, include_quantum=False))
+    test_learned_score = positive_probability(switch, switch_feature_matrix(test_rows, include_quantum=False))
+    learned_threshold, learned_val = tune_switch_threshold(val_rows, val_learned_score, args.min_expert_rate, args.max_expert_rate)
+    rows.append({**policy_metrics(f"{expert_name}:learned_best_of_two_switch", test_rows, test_learned_score >= learned_threshold), "expert": expert_name, "threshold": learned_threshold, "val_tuned_dice": learned_val["selected_dice"], "val_expert_rate": learned_val["expert_rate"]})
 
     per = test_rows[[
         "sample_id",
@@ -257,19 +335,25 @@ def evaluate_quantum_confidence_fusion(
     qdf: pd.DataFrame,
     X: np.ndarray,
     unet: pd.DataFrame,
+    train_mask: np.ndarray,
     val_mask: np.ndarray,
     test_mask: np.ndarray,
     unet_quality_model,
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
+    train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
     val_df = qdf.loc[val_mask].copy().reset_index(drop=True)
     test_df = qdf.loc[test_mask].copy().reset_index(drop=True)
+    train_primary = classical_model.predict(X[train_mask])
     val_primary = classical_model.predict(X[val_mask])
     test_primary = classical_model.predict(X[test_mask])
+    train_quantum = quantum_model.predict(X[train_mask])
     val_quantum = quantum_model.predict(X[val_mask])
     test_quantum = quantum_model.predict(X[test_mask])
+    train_rows = selected_prompt_rows_with_quantum_agreement(train_df, train_primary, train_quantum)
     val_rows = selected_prompt_rows_with_quantum_agreement(val_df, val_primary, val_quantum)
     test_rows = selected_prompt_rows_with_quantum_agreement(test_df, test_primary, test_quantum)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"]))
     val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"]))
     test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"]))
 
@@ -293,6 +377,19 @@ def evaluate_quantum_confidence_fusion(
         "quantum_weight": quantum_weight,
         "val_tuned_dice": val_tune["selected_dice"],
         "val_expert_rate": val_tune["expert_rate"],
+    })
+    switch = fit_learned_switch(train_rows, include_quantum=True, seed=args.seed)
+    val_learned = positive_probability(switch, switch_feature_matrix(val_rows, include_quantum=True))
+    test_learned = positive_probability(switch, switch_feature_matrix(test_rows, include_quantum=True))
+    learned_threshold, learned_val = tune_switch_threshold(val_rows, val_learned, args.min_expert_rate, args.max_expert_rate)
+    learned_row = policy_metrics("classical_sam:quantum_learned_best_of_two_switch", test_rows, test_learned >= learned_threshold)
+    learned_row.update({
+        "expert": "classical_histgb_quantum_confidence",
+        "threshold": learned_threshold,
+        "agreement_weight": np.nan,
+        "quantum_weight": np.nan,
+        "val_tuned_dice": learned_val["selected_dice"],
+        "val_expert_rate": learned_val["expert_rate"],
     })
     per = test_rows[[
         "sample_id",
@@ -318,7 +415,7 @@ def evaluate_quantum_confidence_fusion(
     per["use_expert"] = use_expert
     per["selected_dice"] = np.where(per["use_expert"], per["expert_dice"], per["unet_dice"])
     per["delta_vs_unet"] = per["selected_dice"] - per["unet_dice"]
-    return [row], per
+    return [row, learned_row], per
 
 
 def main():
@@ -329,6 +426,9 @@ def main():
     parser.add_argument("--output_csv", default="endoscopy_guidance/results/side_by_side_unet_quantum_fusion.csv")
     parser.add_argument("--per_sample_csv", default="endoscopy_guidance/results/side_by_side_unet_quantum_fusion_per_sample.csv")
     parser.add_argument("--experts", nargs="+", default=["classical_histgb", "quantum_feature_ridge"])
+    parser.add_argument("--split_mode", choices=["auto", "existing", "random_source"], default="auto")
+    parser.add_argument("--train_fraction", type=float, default=0.60)
+    parser.add_argument("--val_fraction", type=float, default=0.20)
     parser.add_argument("--pqk_components", type=int, default=8)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--min_expert_rate", type=float, default=0.0)
@@ -339,7 +439,7 @@ def main():
     args = parser.parse_args()
 
     qdf, X, unet = load_inputs(Path(args.prompt_quality_csv), Path(args.features), Path(args.unet_metrics_csv))
-    train_mask, val_mask, test_mask = split_masks(qdf)
+    train_mask, val_mask, test_mask = split_masks(qdf, args.split_mode, args.seed, args.train_fraction, args.val_fraction)
     y_train = qdf.loc[train_mask, "sam_dice"].to_numpy(dtype=float)
     train_sources = set(qdf.loc[train_mask, "source_file"].astype(str))
     unet_quality_model = fit_unet_quality_model(unet, train_sources, args.seed)
@@ -371,6 +471,7 @@ def main():
             qdf,
             X,
             unet,
+            train_mask,
             val_mask,
             test_mask,
             unet_quality_model,
