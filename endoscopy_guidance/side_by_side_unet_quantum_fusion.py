@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
@@ -102,17 +103,86 @@ def attach_unet(chosen: pd.DataFrame, unet: pd.DataFrame, unet_scores: np.ndarra
     return rows
 
 
-def fit_unet_quality_model(unet: pd.DataFrame, train_sources: set[str], seed: int):
+def fit_unet_embedding_features(
+    unet: pd.DataFrame,
+    train_sources: set[str],
+    embeddings_npz: str,
+    n_components: int,
+    seed: int,
+) -> tuple[dict[str, np.ndarray] | None, list[str]]:
+    if not embeddings_npz or n_components <= 0:
+        return None, []
+    payload = np.load(embeddings_npz, allow_pickle=True)
+    embedding_by_sample = {
+        str(sample_id): embedding.astype(np.float32)
+        for sample_id, embedding in zip(payload["sample_ids"], payload["embeddings"])
+    }
+    source_to_raw = {}
+    for row in unet.itertuples(index=False):
+        sample_id = str(row.sample_id)
+        if sample_id in embedding_by_sample:
+            source_to_raw[str(row.source_file)] = embedding_by_sample[sample_id]
+    train_sources_available = [source for source in sorted(train_sources) if source in source_to_raw]
+    if len(train_sources_available) < 3:
+        return None, []
+    X_train = np.vstack([source_to_raw[source] for source in train_sources_available])
+    max_components = max(1, min(n_components, X_train.shape[0] - 1, X_train.shape[1]))
+    scaler = StandardScaler()
+    pca = PCA(n_components=max_components, random_state=seed)
+    pca.fit(scaler.fit_transform(X_train))
+    source_to_pc = {
+        source: pca.transform(scaler.transform(source_to_raw[source][None, :]))[0].astype(np.float32)
+        for source in source_to_raw
+    }
+    columns = [f"unet_encoder_pc_{idx:02d}" for idx in range(max_components)]
+    return source_to_pc, columns
+
+
+def add_unet_embedding_features(
+    rows: pd.DataFrame,
+    source_to_pc: dict[str, np.ndarray] | None,
+    columns: list[str],
+) -> pd.DataFrame:
+    if not source_to_pc or not columns:
+        return rows
+    out = rows.copy()
+    zero = np.zeros(len(columns), dtype=np.float32)
+    values = np.vstack([source_to_pc.get(str(source), zero) for source in out["source_file"]])
+    for idx, column in enumerate(columns):
+        out[column] = values[:, idx]
+    return out
+
+
+def fit_unet_quality_model(
+    unet: pd.DataFrame,
+    train_sources: set[str],
+    seed: int,
+    source_to_pc: dict[str, np.ndarray] | None = None,
+    embedding_columns: list[str] | None = None,
+):
     train = unet[unet["source_file"].astype(str).isin(train_sources)].copy()
+    if source_to_pc and embedding_columns:
+        train = add_unet_embedding_features(train, source_to_pc, embedding_columns)
+    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or [])
     model = HistGradientBoostingRegressor(max_iter=120, learning_rate=0.05, random_state=seed)
-    model.fit(train[UNET_CONFIDENCE_COLUMNS].to_numpy(dtype=np.float32), train["dice"].to_numpy(dtype=float))
+    model.fit(train[columns].to_numpy(dtype=np.float32), train["dice"].to_numpy(dtype=float))
     return model
 
 
-def predict_unet_quality(model, unet: pd.DataFrame, sources: pd.Series) -> np.ndarray:
+def predict_unet_quality(
+    model,
+    unet: pd.DataFrame,
+    sources: pd.Series,
+    source_to_pc: dict[str, np.ndarray] | None = None,
+    embedding_columns: list[str] | None = None,
+) -> np.ndarray:
     lookup = unet.set_index("source_file")
     rows = lookup.loc[sources.astype(str), UNET_CONFIDENCE_COLUMNS]
-    return model.predict(rows.to_numpy(dtype=np.float32))
+    rows = rows.reset_index()
+    if source_to_pc and embedding_columns:
+        rows = add_unet_embedding_features(rows, source_to_pc, embedding_columns)
+    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or [])
+    return model.predict(rows[columns].to_numpy(dtype=np.float32))
 
 
 def fit_prompt_selector(model_name: str, X_train: np.ndarray, y_train: np.ndarray, components: int, reps: int, seed: int):
@@ -277,6 +347,8 @@ def switch_feature_matrix(rows: pd.DataFrame, include_quantum: bool) -> np.ndarr
     for col in distribution_cols:
         if col in rows:
             pieces.append(rows[col].to_numpy(dtype=float))
+    for col in sorted(column for column in rows.columns if column.startswith("unet_encoder_pc_")):
+        pieces.append(rows[col].to_numpy(dtype=float))
     return np.column_stack(pieces).astype(np.float32)
 
 
@@ -410,6 +482,8 @@ def evaluate_expert(
     val_mask: np.ndarray,
     test_mask: np.ndarray,
     unet_quality_model,
+    source_to_pc: dict[str, np.ndarray] | None,
+    embedding_columns: list[str],
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
     train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
@@ -424,9 +498,12 @@ def evaluate_expert(
     train_rows = add_distribution_features(train_rows, candidate_distribution_rows(train_df, train_scores))
     val_rows = add_distribution_features(val_rows, candidate_distribution_rows(val_df, val_scores))
     test_rows = add_distribution_features(test_rows, candidate_distribution_rows(test_df, test_scores))
-    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"]))
-    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"]))
-    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"]))
+    train_rows = add_unet_embedding_features(train_rows, source_to_pc, embedding_columns)
+    val_rows = add_unet_embedding_features(val_rows, source_to_pc, embedding_columns)
+    test_rows = add_unet_embedding_features(test_rows, source_to_pc, embedding_columns)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns))
+    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns))
+    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns))
 
     val_switch_score = val_rows["predicted_expert_quality"].to_numpy(dtype=float) - val_rows["predicted_unet_quality"].to_numpy(dtype=float)
     test_switch_score = test_rows["predicted_expert_quality"].to_numpy(dtype=float) - test_rows["predicted_unet_quality"].to_numpy(dtype=float)
@@ -484,6 +561,8 @@ def evaluate_quantum_confidence_fusion(
     val_mask: np.ndarray,
     test_mask: np.ndarray,
     unet_quality_model,
+    source_to_pc: dict[str, np.ndarray] | None,
+    embedding_columns: list[str],
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
     train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
@@ -501,9 +580,12 @@ def evaluate_quantum_confidence_fusion(
     train_rows = add_distribution_features(train_rows, candidate_distribution_rows(train_df, train_primary, train_quantum))
     val_rows = add_distribution_features(val_rows, candidate_distribution_rows(val_df, val_primary, val_quantum))
     test_rows = add_distribution_features(test_rows, candidate_distribution_rows(test_df, test_primary, test_quantum))
-    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"]))
-    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"]))
-    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"]))
+    train_rows = add_unet_embedding_features(train_rows, source_to_pc, embedding_columns)
+    val_rows = add_unet_embedding_features(val_rows, source_to_pc, embedding_columns)
+    test_rows = add_unet_embedding_features(test_rows, source_to_pc, embedding_columns)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns))
+    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns))
+    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns))
 
     threshold, agreement_weight, quantum_weight, val_tune = tune_agreement_switch(
         val_rows,
@@ -610,6 +692,8 @@ def main():
     parser.add_argument("--agreement_weights", type=float, nargs="+", default=[0.0, 0.05, 0.10, 0.20, 0.30])
     parser.add_argument("--quantum_weights", type=float, nargs="+", default=[0.0, 0.10, 0.25, 0.50])
     parser.add_argument("--gain_switch_models", nargs="+", choices=["histgb", "rf"], default=["histgb", "rf"])
+    parser.add_argument("--unet_embeddings_npz", default="")
+    parser.add_argument("--unet_embedding_components", type=int, default=0)
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
 
@@ -617,7 +701,14 @@ def main():
     train_mask, val_mask, test_mask = split_masks(qdf, args.split_mode, args.seed, args.train_fraction, args.val_fraction)
     y_train = qdf.loc[train_mask, "sam_dice"].to_numpy(dtype=float)
     train_sources = set(qdf.loc[train_mask, "source_file"].astype(str))
-    unet_quality_model = fit_unet_quality_model(unet, train_sources, args.seed)
+    source_to_pc, embedding_columns = fit_unet_embedding_features(
+        unet,
+        train_sources,
+        args.unet_embeddings_npz,
+        args.unet_embedding_components,
+        args.seed,
+    )
+    unet_quality_model = fit_unet_quality_model(unet, train_sources, args.seed, source_to_pc, embedding_columns)
 
     summary_rows = []
     per_sample_rows = []
@@ -635,6 +726,8 @@ def main():
             val_mask,
             test_mask,
             unet_quality_model,
+            source_to_pc,
+            embedding_columns,
             args,
         )
         summary_rows.extend(rows)
@@ -650,6 +743,8 @@ def main():
             val_mask,
             test_mask,
             unet_quality_model,
+            source_to_pc,
+            embedding_columns,
             args,
         )
         summary_rows.extend(rows)

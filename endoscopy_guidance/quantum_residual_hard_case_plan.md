@@ -800,3 +800,30 @@ where SAM would rescue UNet. The key missing ingredient is likely more
 switch-label supervision or a stronger confidence signal from the segmentation
 backbone itself, such as temporal consistency, ensemble/TTA uncertainty, or
 features from the UNet encoder rather than only scalar probability-map metrics.
+
+### UNet Encoder Embedding Switch Features
+
+The switch detector was extended with optional low-dimensional UNet encoder
+features via `--unet_embeddings_npz` and `--unet_embedding_components`. PCA is
+fit on train sources only, then the projected encoder features are added to the
+UNet quality estimator and switch-worthy-frame detectors.
+
+Kvasir-120, 10 random-source splits, 48/48/24 train/calibration/test, 8 encoder
+PCs:
+
+| Policy | Dice | Delta vs UNet | Expert rate | Hard Dice | Hard delta vs UNet |
+|---|---:|---:|---:|---:|---:|
+| Always UNet | 0.8837 | +0.0000 | 0.000 | 0.5599 | +0.0000 |
+| Oracle best of UNet/classical SAM | 0.9026 | +0.0190 | 0.121 | 0.6690 | +0.1091 |
+| Quantum learned best-of-two switch | 0.8824 | -0.0012 | 0.042 | 0.5617 | +0.0018 |
+| Classical expected-gain HistGB switch | 0.8809 | -0.0027 | 0.013 | 0.5491 | -0.0108 |
+| Classical confidence switch | 0.8805 | -0.0032 | 0.021 | 0.5599 | +0.0000 |
+| Quantum confidence switch | 0.8778 | -0.0059 | 0.038 | 0.5495 | -0.0104 |
+
+Interpretation: encoder context makes the best quantum learned switch more
+conservative and slightly better on hard frames, but still not enough to beat
+the high-performing UNet baseline overall. The practical next step is to create
+more switch-label supervision by expanding the Kvasir prompt-quality cache
+beyond 120 frames or to use test-time augmentation / ensemble uncertainty from
+UNet, because the existing scalar confidence plus 120-frame prompt cache does
+not identify the rare rescue cases reliably.
