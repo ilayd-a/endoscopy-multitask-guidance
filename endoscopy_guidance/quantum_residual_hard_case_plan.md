@@ -543,3 +543,53 @@ real-time-support concept: the classical policy handles routine frames, and the
 quantum selector is invoked only for high-risk frames. The current limitation
 is low route coverage; the next improvement is a stronger hard-case detector
 that routes more genuinely difficult frames without harming easy frames.
+
+## Full-Kvasir Out-of-Fold Quantum Switch
+
+A full-Kvasir out-of-fold switch driver was added in
+`endoscopy_guidance/hard_case_quantum_switch_oof.py`. This evaluates all 1000
+Kvasir frames while training the switch without the held-out fold being scored.
+The fixed UNet export is unchanged, so this is a calibration/switching study
+over the existing segmentation model rather than a new UNet generalization
+benchmark.
+
+The key algorithmic change is that the router can now learn expected quantum
+benefit directly. The safer deployment policy keeps the classical 0.50 mask by
+default and switches only when the router predicts that the projected-quantum
+threshold selector will improve the mask. This is better aligned with the
+clinical idea than routing on hard-case probability alone.
+
+Full-Kvasir OOF results:
+
+| Run | Dice | Delta | Hard Dice | Hard Delta | Routed | Route Rate |
+|---|---:|---:|---:|---:|---:|---:|
+| 3-threshold hard-router proposer | 0.8914 | -0.0012 | 0.5949 | +0.0009 | 46 | 0.046 |
+| Fixed + quantum-gain, 3 thresholds | 0.8911 | -0.0015 | 0.5897 | -0.0043 | 153 | 0.153 |
+| Fixed + quantum-gain, 13 thresholds, hard cap 5% | 0.8929 | +0.0003 | 0.5956 | +0.0016 | 12 | 0.012 |
+| Fixed + quantum-gain, 13 thresholds, combined cap 10%, q10r3 | 0.8929 | +0.0003 | 0.5970 | +0.0031 | 35 | 0.035 |
+| Fixed + quantum-gain, 13 thresholds, combined cap 10%, q6r2 | 0.8928 | +0.0002 | 0.5971 | +0.0031 | 41 | 0.041 |
+| Fixed + quantum-gain, 13 thresholds, combined cap 10%, q4r2 | 0.8927 | +0.0001 | 0.5964 | +0.0025 | 52 | 0.052 |
+| Fixed + hard-router, 13 thresholds, combined cap 10% | 0.8921 | -0.0005 | 0.5919 | -0.0021 | 30 | 0.030 |
+
+Best current OOF setting:
+
+```bash
+python endoscopy_guidance/hard_case_quantum_switch_oof.py \
+  --baseline_dir endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test \
+  --thresholds 0.30 0.35 0.40 0.45 0.50 0.55 0.60 0.65 0.70 0.75 0.80 0.85 0.90 \
+  --selection_objective combined \
+  --default_selector fixed \
+  --route_target quantum_gain \
+  --max_route_rate 0.10 \
+  --pqk_components 6 \
+  --pqk_reps 2 \
+  --hybrid_quantum
+```
+
+Interpretation: this is directionally correct but still modest. The best OOF
+run protects the strong classical baseline, routes 4.1% of frames to quantum,
+and improves hard-frame Dice from 0.5940 to 0.5971. Routed frames improve by
+about +0.005 Dice on average. The 13-threshold oracle is 0.9083 overall and
+0.6489 on hard frames, so the remaining research gap is router calibration:
+identify more of the recoverable hard frames without routing easy frames that
+the classical mask already handles well.
