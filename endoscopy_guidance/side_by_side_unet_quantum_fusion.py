@@ -153,17 +153,40 @@ def add_unet_embedding_features(
     return out
 
 
+def load_unet_tta_features(tta_csv: str) -> tuple[pd.DataFrame | None, list[str]]:
+    if not tta_csv:
+        return None, []
+    tta = pd.read_csv(tta_csv)
+    columns = sorted(column for column in tta.columns if column.startswith("tta_"))
+    if not columns:
+        raise ValueError(f"No tta_* feature columns found in {tta_csv}")
+    return tta, columns
+
+
+def add_unet_tta_features(rows: pd.DataFrame, tta: pd.DataFrame | None, columns: list[str]) -> pd.DataFrame:
+    if tta is None or not columns:
+        return rows
+    source_cols = ["source_file", *columns]
+    out = rows.merge(tta[source_cols], on="source_file", how="left")
+    out[columns] = out[columns].fillna(0.0)
+    return out
+
+
 def fit_unet_quality_model(
     unet: pd.DataFrame,
     train_sources: set[str],
     seed: int,
     source_to_pc: dict[str, np.ndarray] | None = None,
     embedding_columns: list[str] | None = None,
+    tta: pd.DataFrame | None = None,
+    tta_columns: list[str] | None = None,
 ):
     train = unet[unet["source_file"].astype(str).isin(train_sources)].copy()
     if source_to_pc and embedding_columns:
         train = add_unet_embedding_features(train, source_to_pc, embedding_columns)
-    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or [])
+    if tta is not None and tta_columns:
+        train = add_unet_tta_features(train, tta, tta_columns)
+    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or []) + (tta_columns or [])
     model = HistGradientBoostingRegressor(max_iter=120, learning_rate=0.05, random_state=seed)
     model.fit(train[columns].to_numpy(dtype=np.float32), train["dice"].to_numpy(dtype=float))
     return model
@@ -175,13 +198,17 @@ def predict_unet_quality(
     sources: pd.Series,
     source_to_pc: dict[str, np.ndarray] | None = None,
     embedding_columns: list[str] | None = None,
+    tta: pd.DataFrame | None = None,
+    tta_columns: list[str] | None = None,
 ) -> np.ndarray:
     lookup = unet.set_index("source_file")
     rows = lookup.loc[sources.astype(str), UNET_CONFIDENCE_COLUMNS]
     rows = rows.reset_index()
     if source_to_pc and embedding_columns:
         rows = add_unet_embedding_features(rows, source_to_pc, embedding_columns)
-    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or [])
+    if tta is not None and tta_columns:
+        rows = add_unet_tta_features(rows, tta, tta_columns)
+    columns = UNET_CONFIDENCE_COLUMNS + (embedding_columns or []) + (tta_columns or [])
     return model.predict(rows[columns].to_numpy(dtype=np.float32))
 
 
@@ -349,6 +376,8 @@ def switch_feature_matrix(rows: pd.DataFrame, include_quantum: bool) -> np.ndarr
             pieces.append(rows[col].to_numpy(dtype=float))
     for col in sorted(column for column in rows.columns if column.startswith("unet_encoder_pc_")):
         pieces.append(rows[col].to_numpy(dtype=float))
+    for col in sorted(column for column in rows.columns if column.startswith("tta_")):
+        pieces.append(rows[col].to_numpy(dtype=float))
     return np.column_stack(pieces).astype(np.float32)
 
 
@@ -484,6 +513,8 @@ def evaluate_expert(
     unet_quality_model,
     source_to_pc: dict[str, np.ndarray] | None,
     embedding_columns: list[str],
+    tta: pd.DataFrame | None,
+    tta_columns: list[str],
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
     train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
@@ -501,9 +532,12 @@ def evaluate_expert(
     train_rows = add_unet_embedding_features(train_rows, source_to_pc, embedding_columns)
     val_rows = add_unet_embedding_features(val_rows, source_to_pc, embedding_columns)
     test_rows = add_unet_embedding_features(test_rows, source_to_pc, embedding_columns)
-    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns))
-    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns))
-    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns))
+    train_rows = add_unet_tta_features(train_rows, tta, tta_columns)
+    val_rows = add_unet_tta_features(val_rows, tta, tta_columns)
+    test_rows = add_unet_tta_features(test_rows, tta, tta_columns)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
+    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
+    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
 
     val_switch_score = val_rows["predicted_expert_quality"].to_numpy(dtype=float) - val_rows["predicted_unet_quality"].to_numpy(dtype=float)
     test_switch_score = test_rows["predicted_expert_quality"].to_numpy(dtype=float) - test_rows["predicted_unet_quality"].to_numpy(dtype=float)
@@ -563,6 +597,8 @@ def evaluate_quantum_confidence_fusion(
     unet_quality_model,
     source_to_pc: dict[str, np.ndarray] | None,
     embedding_columns: list[str],
+    tta: pd.DataFrame | None,
+    tta_columns: list[str],
     args,
 ) -> tuple[list[dict], pd.DataFrame]:
     train_df = qdf.loc[train_mask].copy().reset_index(drop=True)
@@ -583,9 +619,12 @@ def evaluate_quantum_confidence_fusion(
     train_rows = add_unet_embedding_features(train_rows, source_to_pc, embedding_columns)
     val_rows = add_unet_embedding_features(val_rows, source_to_pc, embedding_columns)
     test_rows = add_unet_embedding_features(test_rows, source_to_pc, embedding_columns)
-    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns))
-    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns))
-    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns))
+    train_rows = add_unet_tta_features(train_rows, tta, tta_columns)
+    val_rows = add_unet_tta_features(val_rows, tta, tta_columns)
+    test_rows = add_unet_tta_features(test_rows, tta, tta_columns)
+    train_rows = attach_unet(train_rows, unet, predict_unet_quality(unet_quality_model, unet, train_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
+    val_rows = attach_unet(val_rows, unet, predict_unet_quality(unet_quality_model, unet, val_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
+    test_rows = attach_unet(test_rows, unet, predict_unet_quality(unet_quality_model, unet, test_rows["source_file"], source_to_pc, embedding_columns, tta, tta_columns))
 
     threshold, agreement_weight, quantum_weight, val_tune = tune_agreement_switch(
         val_rows,
@@ -694,6 +733,7 @@ def main():
     parser.add_argument("--gain_switch_models", nargs="+", choices=["histgb", "rf"], default=["histgb", "rf"])
     parser.add_argument("--unet_embeddings_npz", default="")
     parser.add_argument("--unet_embedding_components", type=int, default=0)
+    parser.add_argument("--unet_tta_csv", default="")
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
 
@@ -708,7 +748,8 @@ def main():
         args.unet_embedding_components,
         args.seed,
     )
-    unet_quality_model = fit_unet_quality_model(unet, train_sources, args.seed, source_to_pc, embedding_columns)
+    tta, tta_columns = load_unet_tta_features(args.unet_tta_csv)
+    unet_quality_model = fit_unet_quality_model(unet, train_sources, args.seed, source_to_pc, embedding_columns, tta, tta_columns)
 
     summary_rows = []
     per_sample_rows = []
@@ -728,6 +769,8 @@ def main():
             unet_quality_model,
             source_to_pc,
             embedding_columns,
+            tta,
+            tta_columns,
             args,
         )
         summary_rows.extend(rows)
@@ -745,6 +788,8 @@ def main():
             unet_quality_model,
             source_to_pc,
             embedding_columns,
+            tta,
+            tta_columns,
             args,
         )
         summary_rows.extend(rows)
