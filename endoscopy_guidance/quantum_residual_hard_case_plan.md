@@ -500,3 +500,46 @@ Instead, it supports a publication direction around quantum active learning for
 rare positive candidate discovery in image-guided intervention workflows. The
 next technical improvement should connect this triage gain to a stronger
 candidate-conditioned mask or instrument-guidance module.
+
+## Implemented Hard-Case Quantum Switch
+
+The hard-case routing idea is now implemented as an inference-style policy in
+`endoscopy_guidance/hard_case_quantum_switch.py`.
+
+Training command:
+
+```bash
+python endoscopy_guidance/hard_case_quantum_switch.py train \
+  --baseline_dir endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test \
+  --policy_path models/hard_case_quantum_switch_kvasir.joblib \
+  --selection_objective overall \
+  --pqk_components 8 \
+  --pqk_reps 3
+```
+
+Application command:
+
+```bash
+python endoscopy_guidance/hard_case_quantum_switch.py apply \
+  --baseline_dir endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test \
+  --policy_path models/hard_case_quantum_switch_kvasir.joblib \
+  --split test \
+  --per_frame_csv endoscopy_guidance/results/hard_case_quantum_switch_kvasir_test_per_frame.csv \
+  --summary_json endoscopy_guidance/results/hard_case_quantum_switch_kvasir_test_summary.json
+```
+
+Held-out Kvasir test behavior:
+
+| Frames | Routed to quantum | Route rate | Test Dice | Delta Dice | Hard Dice | Hard delta Dice |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 1 | 0.01 | 0.8664 | +0.0088 | 0.6164 | +0.0384 |
+
+The routed frame was `kvasir_test_0032_cju8bj2ssrmlm0871gc2ug2rs`: baseline
+Dice was 0.630, the router assigned hard-case score 0.886, and the quantum
+selector chose threshold 0.90, matching the oracle and raising Dice to 0.848.
+
+Interpretation: this is the concrete system behavior requested for a
+real-time-support concept: the classical policy handles routine frames, and the
+quantum selector is invoked only for high-risk frames. The current limitation
+is low route coverage; the next improvement is a stronger hard-case detector
+that routes more genuinely difficult frames without harming easy frames.
