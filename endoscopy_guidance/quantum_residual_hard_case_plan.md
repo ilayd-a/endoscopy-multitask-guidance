@@ -680,3 +680,49 @@ outperforms classical uncertainty in mean final Dice. This is the best current
 route for a publishable quantum-medical-AI story: label-efficient quantum
 acquisition for prompt/mask supervision, followed by a strong classical
 deployment-time selector.
+
+## Side-by-Side UNet and Quantum-Confidence Fusion
+
+A more deployment-aligned experiment now runs the fixed UNet and a SAM prompt
+expert side by side, then uses validation-calibrated confidence to choose which
+mask to trust per held-out frame. This matches the clinical goal: preserve the
+classical segmentation backbone, but allow a quantum-assisted branch to rescue
+frames where another mask is more reliable.
+
+Implemented script:
+
+```bash
+python endoscopy_guidance/side_by_side_unet_quantum_fusion.py \
+  --prompt_quality_csv endoscopy_guidance/results/sam_prompt_quality_dataset_full_r48_mps.csv \
+  --features endoscopy_guidance/results/sam_prompt_quality_features_full_r48_samembed_context.npy \
+  --unet_metrics_csv endoscopy_guidance/results/strong_unet_pretrained_cvc_all/baseline_metrics.csv \
+  --experts classical_histgb quantum_feature_ridge \
+  --pqk_components 8 \
+  --pqk_reps 2 \
+  --max_expert_rate 0.50
+```
+
+Held-out CVC test results, 66 frames:
+
+| Policy | Dice | Delta vs UNet | Expert rate | Hard Dice | Hard delta vs UNet |
+|---|---:|---:|---:|---:|---:|
+| Always UNet | 0.6356 | +0.0000 | 0.000 | 0.5285 | +0.0000 |
+| Always classical SAM expert | 0.5862 | -0.0494 | 1.000 | 0.5522 | +0.0237 |
+| Classical confidence switch | 0.6759 | +0.0403 | 0.348 | 0.5959 | +0.0675 |
+| Quantum-confidence switch | 0.6834 | +0.0478 | 0.303 | 0.5970 | +0.0686 |
+| Oracle best of UNet/classical SAM | 0.7327 | +0.0971 | 0.318 | 0.6640 | +0.1355 |
+
+Paired quantum-confidence switch versus fixed UNet:
+
+| Subset | Mean Dice gain | 95% bootstrap CI | Sign-flip p | Wins / losses / ties |
+|---|---:|---:|---:|---:|
+| All test frames | +0.0478 | [+0.0046, +0.0990] | 0.0547 | 13 / 7 / 46 |
+| Hard frames | +0.0686 | [+0.0074, +0.1395] | 0.0505 | not reported |
+
+Interpretation: this is currently the most clinically natural result. Direct
+quantum-feature SAM prediction is too weak as the alternate expert, but a
+quantum confidence branch improves the validation-calibrated switch that chooses
+between the strong UNet and the stronger classical SAM prompt expert. The gap to
+the oracle best-of-two policy is still large, so the next improvement target is
+better confidence calibration, not a stronger standalone quantum segmentation
+model.
