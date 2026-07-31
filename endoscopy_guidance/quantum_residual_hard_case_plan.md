@@ -463,3 +463,40 @@ quantum calibration, but it still does not show superiority over the best
 classical calibrators. A publishable claim should therefore focus on hard-case
 calibration significance and rigorous comparison, or the project needs a new
 quantum mechanism that beats RF/HistGB rather than matching them.
+
+## Stronger Direction: Quantum Active Learning for Candidate Triage
+
+The segmentation-threshold calibration work gives significant hard-case gains
+versus a fixed threshold, but not a clear quantum advantage over RF/HistGB. A
+stronger quantum-specific direction is active learning for candidate guidance:
+use a projected quantum-kernel uncertainty policy to choose which candidate
+annotations should be labeled next under class imbalance.
+
+A focused rerun was added with 5 grouped folds, 10 annotation-sampling repeats,
+40-to-200 labeled candidates, four acquisition policies, and a classical
+logistic final reranker. The final top-5 guidance endpoint was mixed, but the
+annotation-triage endpoint was strong.
+
+Selected-positive rate in each newly acquired batch:
+
+| Labeled candidates | Random | Classical uncertainty | PQK uncertainty | PQK hybrid |
+|---:|---:|---:|---:|---:|
+| 80 | 0.062 | 0.060 | 0.046 | 0.049 |
+| 120 | 0.053 | 0.053 | 0.114 | 0.102 |
+| 160 | 0.058 | 0.037 | 0.134 | 0.112 |
+| 200 | 0.066 | 0.043 | 0.119 | 0.114 |
+
+Paired PQK uncertainty versus classical uncertainty:
+
+| Labeled candidates | Difference | 95% CI | Permutation p |
+|---:|---:|:---|:---|
+| 120 | +0.061 | [0.039, 0.083] | <0.001 |
+| 160 | +0.097 | [0.069, 0.127] | <0.001 |
+| 200 | +0.076 | [0.045, 0.106] | <0.001 |
+
+Interpretation: this is currently the clearest statistically significant
+quantum-specific result. It does not claim better final segmentation Dice.
+Instead, it supports a publication direction around quantum active learning for
+rare positive candidate discovery in image-guided intervention workflows. The
+next technical improvement should connect this triage gain to a stronger
+candidate-conditioned mask or instrument-guidance module.

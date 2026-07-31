@@ -114,6 +114,16 @@ def make_eval_models(seed: int):
     }
 
 
+def select_eval_models(seed: int, requested: list[str] | None):
+    models = make_eval_models(seed)
+    if not requested:
+        return models
+    missing = sorted(set(requested) - set(models))
+    if missing:
+        raise ValueError(f"Unknown eval model(s): {missing}")
+    return {name: models[name] for name in requested}
+
+
 def uncertainty_from_scores(scores: np.ndarray) -> np.ndarray:
     scores = np.asarray(scores, dtype=float)
     if np.nanmin(scores) < 0.0 or np.nanmax(scores) > 1.0:
@@ -290,6 +300,7 @@ def main():
         nargs="+",
         default=["random", "classical_uncertainty", "pqk_uncertainty", "pqk_diversity", "pqk_hybrid"],
     )
+    parser.add_argument("--eval_models", nargs="+", default=[])
     parser.add_argument("--image_features", action="store_true")
     parser.add_argument("--refine_alpha", type=float, default=0.0)
     parser.add_argument("--refine_sigma", type=float, default=20.0)
@@ -339,7 +350,7 @@ def main():
                     if len(np.unique(y_labeled)) < 2:
                         continue
 
-                    for model_name, model in make_eval_models(repeat_seed + round_idx).items():
+                    for model_name, model in select_eval_models(repeat_seed + round_idx, args.eval_models).items():
                         print(
                             f"[run] fold={fold_name} repeat={repeat_idx} strategy={strategy} "
                             f"round={round_idx} labels={len(labeled_idx)} eval={model_name}"
