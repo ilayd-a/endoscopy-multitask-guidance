@@ -593,3 +593,29 @@ about +0.005 Dice on average. The 13-threshold oracle is 0.9083 overall and
 0.6489 on hard frames, so the remaining research gap is router calibration:
 identify more of the recoverable hard frames without routing easy frames that
 the classical mask already handles well.
+
+### Additional Switch Calibration Attempts
+
+The OOF driver now supports two stricter routing mechanisms:
+
+- `--quantum_threshold_gate positive_tune`: allow only quantum threshold
+  classes that showed positive validation gain inside the fold.
+- `--route_model regressor`: train the router to predict expected quantum Dice
+  gain directly, rather than classifying gain/no-gain.
+
+Follow-up full-Kvasir OOF ablation:
+
+| Run | Dice | Delta | Hard Dice | Hard Delta | Routed | Route Rate | Routed Delta |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Best previous: q6r2 quantum-gain switch | 0.8928 | +0.0002 | 0.5971 | +0.0031 | 41 | 0.041 | +0.0050 |
+| Validation-gated q6r2 switch | 0.8930 | +0.0003 | 0.5949 | +0.0009 | 53 | 0.053 | +0.0062 |
+| Hard-objective gated q6r2 switch | 0.8929 | +0.0003 | 0.5948 | +0.0008 | 59 | 0.059 | +0.0046 |
+| Loose-cap q6r2 switch | 0.8928 | +0.0002 | 0.5969 | +0.0030 | 63 | 0.063 | +0.0032 |
+| Base gain-regression q6r2 switch | 0.8918 | -0.0008 | 0.5902 | -0.0038 | 30 | 0.030 | -0.0281 |
+| Threshold-stack gain-regression q6r2 switch | 0.8921 | -0.0006 | 0.5924 | -0.0016 | 32 | 0.032 | -0.0181 |
+
+Interpretation: threshold gating improves the routed-case precision and gives
+the best overall Dice, but it does not improve the difficult-frame endpoint.
+Gain regression is not reliable on the current feature set. The strongest
+hard-case setting remains the compact hybrid projected-quantum q6r2 switch with
+fixed classical default and a validation-tuned route cap.
