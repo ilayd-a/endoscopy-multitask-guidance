@@ -619,3 +619,64 @@ the best overall Dice, but it does not improve the difficult-frame endpoint.
 Gain regression is not reliable on the current feature set. The strongest
 hard-case setting remains the compact hybrid projected-quantum q6r2 switch with
 fixed classical default and a validation-tuned route cap.
+
+## Stronger Pivot: Quantum Active Learning for SAM Prompt Supervision
+
+The more promising direction is to move quantum earlier in the medical-AI
+workflow. Instead of asking quantum to adjust a nearly saturated UNet threshold,
+we use a projected quantum kernel to choose which candidate SAM prompt masks
+should receive expensive quality labels. A final prompt-quality regressor then
+uses only those labels to choose the best candidate mask per held-out frame.
+
+Implemented script:
+
+```bash
+python endoscopy_guidance/sam_prompt_active_learning.py \
+  --prompt_quality_csv endoscopy_guidance/results/sam_prompt_quality_dataset_full_r48_mps.csv \
+  --prompt_quality_features endoscopy_guidance/results/sam_prompt_quality_features_full_r48_samembed_context.npy \
+  --eval_split test \
+  --eval_candidate_cap 60 \
+  --initial_labels 80 \
+  --batch_size 80 \
+  --rounds 2 \
+  --repeats 10 \
+  --good_threshold 0 \
+  --strategies random classical_uncertainty pqk_uncertainty pqk_hybrid \
+  --final_models classical_histgb \
+  --pqk_components 8 \
+  --pqk_reps 2
+```
+
+This uses cached full SAM prompt-quality data with SAM embedding/context
+features. The acquisition target is the top 30% of prompt quality in the
+training pool (`--good_threshold 0`), which is better behaved than an absolute
+Dice cutoff because the prompt candidate distribution is highly imbalanced.
+
+Ten-repeat held-out test results with a classical HistGB final prompt selector:
+
+| Acquisition policy | 80 labels Dice | 160 labels Dice | 240 labels Dice | 240 selected-positive rate |
+|---|---:|---:|---:|---:|
+| Random | 0.4212 | 0.4991 | 0.5289 | 0.2725 |
+| Classical uncertainty | 0.4448 | 0.4762 | 0.4856 | 0.3556 |
+| PQK uncertainty | 0.4396 | 0.4792 | 0.5192 | 0.4056 |
+| PQK hybrid | 0.4333 | 0.4864 | 0.5152 | 0.3481 |
+
+Paired PQK uncertainty differences:
+
+| Comparison | Labels | Dice difference | 95% bootstrap CI | Sign-flip p |
+|---|---:|---:|---:|---:|
+| PQK uncertainty vs random | 80 | +0.0184 | [-0.0486, +0.0774] | 0.609 |
+| PQK uncertainty vs random | 160 | -0.0199 | [-0.0765, +0.0339] | 0.524 |
+| PQK uncertainty vs random | 240 | -0.0097 | [-0.0488, +0.0229] | 0.627 |
+| PQK uncertainty vs classical uncertainty | 80 | -0.0052 | [-0.0612, +0.0528] | 0.874 |
+| PQK uncertainty vs classical uncertainty | 160 | +0.0029 | [-0.0445, +0.0513] | 0.930 |
+| PQK uncertainty vs classical uncertainty | 240 | +0.0335 | [-0.0152, +0.0757] | 0.205 |
+
+Interpretation: this is not yet a definitive superiority result, but it is a
+larger and more clinically meaningful effect than the threshold-switch gains.
+At 240 labels, PQK uncertainty recovers much of the random-sampling final Dice
+while selecting substantially more high-quality prompts than random, and it
+outperforms classical uncertainty in mean final Dice. This is the best current
+route for a publishable quantum-medical-AI story: label-efficient quantum
+acquisition for prompt/mask supervision, followed by a strong classical
+deployment-time selector.
