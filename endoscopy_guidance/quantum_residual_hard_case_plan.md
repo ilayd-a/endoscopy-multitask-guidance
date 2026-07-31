@@ -766,3 +766,37 @@ frames. This suggests the publishable direction should use the CVC/external
 setting for demonstrated fusion gains, while framing Kvasir as evidence that
 high-baseline deployment needs stronger calibration, more prompt labels, or
 temporally/grouped confidence modeling before automatic switching.
+
+### Richer Switch-Worthy Frame Detector
+
+The fusion script now includes richer switch detectors that try to predict the
+event `SAM-selected mask beats UNet` more directly:
+
+- candidate-distribution features from the full prompt set for each frame
+- selected prompt SAM confidence, heatmap score, radius, and score margins
+- primary/quantum score distribution statistics
+- primary/quantum top-candidate agreement
+- learned best-of-two classifiers
+- expected-gain regressors (`expert_dice - unet_dice`) using HistGB and RF
+- conservative two-signal gates: switch only when predicted UNet quality is low
+  and predicted SAM quality is high, optionally requiring quantum agreement
+
+On the original 72/24/24 Kvasir-120 random-source split protocol, these richer
+detectors still did not reliably improve over the strong UNet. Using a larger
+48/48/24 train/calibration/test split made the detector safer but not better:
+
+| Policy | Dice | Delta vs UNet | Expert rate | Hard Dice | Hard delta vs UNet |
+|---|---:|---:|---:|---:|---:|
+| Always UNet | 0.8837 | +0.0000 | 0.000 | 0.5599 | +0.0000 |
+| Oracle best of UNet/classical SAM | 0.9026 | +0.0190 | 0.121 | 0.6690 | +0.1091 |
+| Classical confidence switch | 0.8837 | -0.0000 | 0.021 | 0.5599 | +0.0000 |
+| Classical expected-gain HistGB switch | 0.8833 | -0.0004 | 0.042 | 0.5599 | +0.0000 |
+| Quantum expected-gain HistGB switch | 0.8832 | -0.0005 | 0.021 | 0.5599 | +0.0000 |
+| Classical two-signal quality gate | 0.8801 | -0.0035 | 0.063 | 0.5334 | -0.0265 |
+
+Interpretation: the better detector currently learns to abstain rather than
+over-switch, which is clinically safer, but it still misses the rare frames
+where SAM would rescue UNet. The key missing ingredient is likely more
+switch-label supervision or a stronger confidence signal from the segmentation
+backbone itself, such as temporal consistency, ensemble/TTA uncertainty, or
+features from the UNet encoder rather than only scalar probability-map metrics.
