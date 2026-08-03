@@ -155,6 +155,75 @@ features, the best hard-weighted deployable policy had mean Dice 0.8916
 (+0.0009 vs UNet) and hard-frame Dice 0.6351 (+0.0153 vs UNet). It switched more
 often, but also over-switched on some splits.
 
+## Hard-Enriched Kvasir-300 Validation
+
+To address the main weakness of the 120-frame random cache, a larger
+hard-enriched Kvasir validation subset was built from the strong UNet baseline.
+The selected set contains 300 frames, including 135 frames with UNet Dice < 0.80
+and 264 frames with UNet Dice < 0.90. The subset is reproducible with:
+
+```bash
+python endoscopy_guidance/select_kvasir_hard_enriched_subset.py \
+  --baseline_csv endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test/baseline_metrics.csv \
+  --output_dir endoscopy_guidance/exports/kvasir_hard_enriched_300
+
+python endoscopy_guidance/export_kvasir_external.py \
+  --kvasir_root /Users/ilaydadilek/Downloads/Kvasir-SEG \
+  --output_dir endoscopy_guidance/exports/kvasir_hard_enriched_300 \
+  --source_list endoscopy_guidance/exports/kvasir_hard_enriched_300/source_files.txt \
+  --max_samples 300
+```
+
+The multi-radius prompt-quality cache uses radii 32, 48, 64, and 96 pixels and
+contains 100,780 candidate masks.
+
+| Quantity | Value |
+| --- | ---: |
+| Frames | 300 |
+| Candidate masks | 100,780 |
+| Mean UNet Dice | 0.7476 |
+| Mean best-SAM Dice | 0.8647 |
+| Oracle best-of-UNet/SAM Dice | 0.8796 |
+| Oracle gain vs UNet | +0.1320 |
+| Frames where best SAM beats UNet | 231 / 300, 77.0% |
+
+For hard UNet frames:
+
+| Quantity | Value |
+| --- | ---: |
+| Hard frames | 135 / 300 |
+| Mean hard-frame UNet Dice | 0.5940 |
+| Mean hard-frame best-SAM Dice | 0.8423 |
+| Hard-frame oracle best-of-UNet/SAM Dice | 0.8457 |
+| Hard-frame oracle gain vs UNet | +0.2518 |
+| Hard frames where best SAM beats UNet | 128 / 135, 94.8% |
+
+This validates the core hard-case claim on a substantially larger and more
+clinically relevant set: the alternate promptable branch is usually better when
+the classical UNet is weak.
+
+### Learned Switch on Kvasir-300
+
+The deployable residual switch was evaluated across 5 source-level splits, each
+using 50% train, 25% validation/calibration, and 25% held-out test. Features
+included multi-radius prompt features, local frozen-SAM embedding descriptors,
+within-frame candidate context/rank features, UNet confidence features, and TTA
+uncertainty features.
+
+| Policy | Mean selected Dice | Mean delta vs UNet | Mean SAM rate | Hard-frame selected Dice | Hard-frame delta vs UNet |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classical absolute-SAM selected-candidate oracle | 0.8277 | +0.0680 | 0.4747 | 0.7565 | +0.1467 |
+| Classical residual-gain selected-candidate oracle | 0.8259 | +0.0662 | 0.4773 | 0.7501 | +0.1403 |
+| Classical absolute-SAM meta-RF switch | 0.7775 | +0.0178 | 0.2267 | 0.6820 | +0.0721 |
+| Classical residual-gain meta-RF switch | 0.7774 | +0.0177 | 0.2773 | 0.6752 | +0.0654 |
+| Classical residual-gain validation switch | 0.7740 | +0.0143 | 0.3013 | 0.6768 | +0.0670 |
+| Always UNet | 0.7597 | +0.0000 | 0.0000 | 0.6098 | +0.0000 |
+
+This is the first result in the project that looks like a credible deployable
+improvement rather than only an oracle story. It is not yet the full oracle, but
+it moves the held-out hard-frame Dice by about +0.07 while preserving an overall
+positive Dice gain.
+
 ## Interpretation
 
 Residual-gain targeting produced the first validation-calibrated non-oracle
@@ -166,9 +235,9 @@ missing switch model alone.
 
 The remaining bottleneck is calibration, not the existence of a better alternate
 mask. The full multi-radius oracle shows large recoverable headroom, especially
-on hard frames, but only a small number of held-out frames per split have
-positive-gain SAM candidates. With only 48 calibration frames per split,
-threshold selection is unstable and usually abstains.
+on hard frames. The hard-enriched 300-frame validation improves calibration
+enough to produce a meaningful learned-switch gain, but a gap remains between
+the deployable switch and the selected-candidate oracle.
 
 ## Next Scientific Step
 
@@ -176,7 +245,8 @@ The most publication-relevant next step is to increase the candidate/evaluation
 coverage, not to claim a large result from the 120-frame cache. A stronger study
 should:
 
-1. Expand cached SAM candidate quality to the full Kvasir validation/test pool.
+1. Expand cached SAM candidate quality to the full Kvasir validation/test pool
+   after validating the hard-enriched 300-frame result.
 2. Keep multiple prompt radii and add richer prompt families, because prompt
    diversity is now the strongest observed source of improvement.
 3. Evaluate residual-gain switching with confidence intervals and paired

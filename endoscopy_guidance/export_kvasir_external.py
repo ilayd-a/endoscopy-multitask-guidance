@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--kvasir_root", default="/Users/ilaydadilek/Downloads/Kvasir-SEG")
     parser.add_argument("--output_dir", default="endoscopy_guidance/exports/kvasir_external_120")
     parser.add_argument("--max_samples", type=int, default=120)
+    parser.add_argument("--source_list", default="", help="Optional newline-delimited image filenames to export in that order.")
     parser.add_argument("--image_size", type=int, default=256)
     parser.add_argument("--min_mask_pixels", type=int, default=25)
     parser.add_argument("--seed", type=int, default=321)
@@ -72,8 +73,16 @@ def main():
     if not pairs:
         raise FileNotFoundError(f"No image/mask pairs found under {root}")
 
-    rng = np.random.default_rng(args.seed)
-    selected = [pairs[int(i)] for i in rng.permutation(len(pairs))]
+    if args.source_list:
+        wanted = [line.strip() for line in Path(args.source_list).read_text().splitlines() if line.strip()]
+        pair_by_name = {image_path.name: (image_path, mask_path) for image_path, mask_path in pairs}
+        missing = [name for name in wanted if name not in pair_by_name]
+        if missing:
+            raise FileNotFoundError(f"{len(missing)} source_list entries were not found under {root}; first missing={missing[0]}")
+        selected = [pair_by_name[name] for name in wanted]
+    else:
+        rng = np.random.default_rng(args.seed)
+        selected = [pairs[int(i)] for i in rng.permutation(len(pairs))]
 
     rows = []
     skipped_empty = 0
