@@ -224,6 +224,55 @@ improvement rather than only an oracle story. It is not yet the full oracle, but
 it moves the held-out hard-frame Dice by about +0.07 while preserving an overall
 positive Dice gain.
 
+Paired bootstrap confidence intervals and sign-flip permutation tests were then
+computed over the held-out per-frame decisions:
+
+| Policy | Overall delta 95% CI | Overall p | Hard-frame delta 95% CI | Hard-frame p |
+| --- | ---: | ---: | ---: | ---: |
+| Classical absolute-SAM meta-RF switch | +0.0178 [0.0044, 0.0319] | 0.0106 | +0.0686 [0.0425, 0.0971] | 0.0002 |
+| Classical residual-gain meta-RF switch | +0.0177 [0.0032, 0.0324] | 0.0166 | +0.0631 [0.0342, 0.0938] | 0.0002 |
+| Classical residual-gain validation switch | +0.0143 [-0.0006, 0.0294] | 0.0618 | +0.0645 [0.0360, 0.0946] | 0.0004 |
+
+## CVC External Validation
+
+The same residual-switch pipeline was also evaluated on the existing CVC prompt
+quality cache and CVC UNet baseline. This is a useful external-domain check
+because the Kvasir hard-enriched subset was selected from the Kvasir UNet
+baseline, while CVC has a different filename/export path and baseline metric
+distribution. This CVC run used the available radius-48 prompt-quality cache.
+
+| Policy | Mean selected Dice | Mean delta vs UNet | Mean SAM rate | Hard-frame selected Dice | Hard-frame delta vs UNet |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classical absolute-SAM selected-candidate oracle | 0.8614 | +0.0523 | 0.3216 | 0.6828 | +0.1769 |
+| Classical residual-gain selected-candidate oracle | 0.8607 | +0.0516 | 0.3268 | 0.6814 | +0.1755 |
+| Classical residual-gain validation switch | 0.8387 | +0.0296 | 0.1856 | 0.6236 | +0.1177 |
+| Classical residual-gain meta-RF switch | 0.8367 | +0.0276 | 0.2536 | 0.6279 | +0.1220 |
+| Always UNet | 0.8091 | +0.0000 | 0.0000 | 0.5059 | +0.0000 |
+
+Paired statistics on CVC were strong:
+
+| Policy | Overall delta 95% CI | Overall p | Hard-frame delta 95% CI | Hard-frame p |
+| --- | ---: | ---: | ---: | ---: |
+| Classical residual-gain validation switch | +0.0296 [0.0208, 0.0390] | 0.0002 | +0.1169 [0.0869, 0.1486] | 0.0002 |
+| Classical residual-gain meta-RF switch | +0.0276 [0.0182, 0.0374] | 0.0002 | +0.1210 [0.0899, 0.1537] | 0.0002 |
+
+This external validation substantially strengthens the paper argument: the
+second-opinion switch improves hard frames on both Kvasir and CVC, and the CVC
+effect is statistically clearer than the Kvasir hard-enriched result.
+
+## Qualitative Rescue Examples
+
+Qualitative panels were exported for held-out Kvasir hard frames where the
+learned switch selected SAM and improved over UNet. The generated figures are in
+`docs/figures/kvasir_hard_enriched_switch_examples/`, with a manifest CSV
+recording the source file, UNet Dice, switched SAM Dice, Dice gain, selected
+radius, and policy.
+
+One representative rescue case improves from UNet Dice 0.097 to switched SAM
+Dice 0.816, illustrating the intended clinical behavior: keep the classical UNet
+as the default, but route difficult frames to the promptable second-opinion
+branch when the switch predicts a likely gain.
+
 ## Interpretation
 
 Residual-gain targeting produced the first validation-calibrated non-oracle
@@ -247,9 +296,9 @@ should:
 
 1. Expand cached SAM candidate quality to the full Kvasir validation/test pool
    after validating the hard-enriched 300-frame result.
-2. Keep multiple prompt radii and add richer prompt families, because prompt
+2. Add multi-radius CVC/PolypGen caches, because the CVC external validation
+   already works with radius 48 and may improve further with prompt diversity.
+3. Keep multiple prompt radii and add richer prompt families, because prompt
    diversity is now the strongest observed source of improvement.
-3. Evaluate residual-gain switching with confidence intervals and paired
-   source-level tests.
 4. Keep UNet as the default output and frame the quantum/SAM branch as
    hard-case second-opinion routing.

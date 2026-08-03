@@ -138,6 +138,35 @@ def policy_metrics(name: str, rows: pd.DataFrame, use_sam: np.ndarray) -> dict:
     }
 
 
+def per_policy_rows(name: str, rows: pd.DataFrame, use_sam: np.ndarray, threshold: float) -> pd.DataFrame:
+    per = rows[[
+        "sample_id",
+        "source_file",
+        "model",
+        "target",
+        "sam_dice",
+        "sam_iou",
+        "unet_dice",
+        "unet_iou",
+        "residual_gain",
+        "predicted_gain",
+        "score_margin",
+        "score_margin_norm",
+        "y",
+        "x",
+        "radius",
+        "heatmap_score",
+        "sam_score",
+    ]].copy()
+    per["policy"] = name
+    per["threshold"] = threshold
+    per["use_sam"] = use_sam
+    per["selected_dice"] = np.where(per["use_sam"], per["sam_dice"], per["unet_dice"])
+    per["delta_vs_unet"] = per["selected_dice"] - per["unet_dice"]
+    per["hard_unet"] = per["unet_dice"] < 0.80
+    return per
+
+
 def tune_threshold(val_rows: pd.DataFrame, score_col: str, min_rate: float, max_rate: float, hard_weight: float) -> tuple[float, dict]:
     scores = val_rows[score_col].to_numpy(dtype=float)
     thresholds = np.unique(np.quantile(scores, np.linspace(0, 1, 101)))
@@ -214,46 +243,37 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
         test_rows = selected_rows(qdf.loc[test_mask].copy(), model.predict(X[test_mask]), model_name, target_name)
         threshold, val_tune = tune_threshold(val_rows, "predicted_gain", args.min_sam_rate, args.max_sam_rate, args.hard_weight)
         use_test = test_rows["predicted_gain"].to_numpy(dtype=float) >= threshold
-        rows.append({**policy_metrics(f"{model_name}:{target_name}:always_unet", test_rows, np.zeros(len(test_rows), dtype=bool)), "model": model_name, "target": target_name, "threshold": np.inf})
-        rows.append({**policy_metrics(f"{model_name}:{target_name}:always_sam", test_rows, np.ones(len(test_rows), dtype=bool)), "model": model_name, "target": target_name, "threshold": -np.inf})
-        rows.append({**policy_metrics(f"{model_name}:{target_name}:oracle_best_of_two", test_rows, test_rows["sam_dice"].to_numpy(dtype=float) > test_rows["unet_dice"].to_numpy(dtype=float)), "model": model_name, "target": target_name, "threshold": np.nan})
-        rows.append({**policy_metrics(f"{model_name}:{target_name}:val_gain_switch", test_rows, use_test), "model": model_name, "target": target_name, "threshold": threshold, "val_tuned_dice": val_tune["selected_dice"], "val_sam_rate": val_tune["sam_rate"]})
+        policy_defs = [
+            (f"{model_name}:{target_name}:always_unet", np.zeros(len(test_rows), dtype=bool), np.inf, {}),
+            (f"{model_name}:{target_name}:always_sam", np.ones(len(test_rows), dtype=bool), -np.inf, {}),
+            (f"{model_name}:{target_name}:oracle_best_of_two", test_rows["sam_dice"].to_numpy(dtype=float) > test_rows["unet_dice"].to_numpy(dtype=float), np.nan, {}),
+            (f"{model_name}:{target_name}:val_gain_switch", use_test, threshold, {"val_tuned_dice": val_tune["selected_dice"], "val_sam_rate": val_tune["sam_rate"]}),
+        ]
+        for policy_name, policy_use_sam, policy_threshold, extra in policy_defs:
+            rows.append({
+                **policy_metrics(policy_name, test_rows, policy_use_sam),
+                "model": model_name,
+                "target": target_name,
+                "threshold": policy_threshold,
+                **extra,
+            })
+            per_outputs.append(per_policy_rows(policy_name, test_rows, policy_use_sam, policy_threshold))
         for switch_name in args.switch_models:
             switch_model, switch_columns = fit_switch_model(switch_name, train_rows, args.seed)
             val_rows[f"switch_gain_{switch_name}"] = switch_model.predict(val_rows[switch_columns].to_numpy(dtype=np.float32))
             test_rows[f"switch_gain_{switch_name}"] = switch_model.predict(test_rows[switch_columns].to_numpy(dtype=np.float32))
             switch_threshold, switch_val = tune_threshold(val_rows, f"switch_gain_{switch_name}", args.min_sam_rate, args.max_sam_rate, args.hard_weight)
             use_switch = test_rows[f"switch_gain_{switch_name}"].to_numpy(dtype=float) >= switch_threshold
+            policy_name = f"{model_name}:{target_name}:meta_{switch_name}_gain_switch"
             rows.append({
-                **policy_metrics(f"{model_name}:{target_name}:meta_{switch_name}_gain_switch", test_rows, use_switch),
+                **policy_metrics(policy_name, test_rows, use_switch),
                 "model": model_name,
                 "target": target_name,
                 "threshold": switch_threshold,
                 "val_tuned_dice": switch_val["selected_dice"],
                 "val_sam_rate": switch_val["sam_rate"],
             })
-        per = test_rows[[
-            "sample_id",
-            "source_file",
-            "model",
-            "target",
-            "sam_dice",
-            "sam_iou",
-            "unet_dice",
-            "unet_iou",
-            "residual_gain",
-            "predicted_gain",
-            "score_margin",
-            "score_margin_norm",
-            "radius",
-            "heatmap_score",
-            "sam_score",
-        ]].copy()
-        per["threshold"] = threshold
-        per["use_sam"] = use_test
-        per["selected_dice"] = np.where(per["use_sam"], per["sam_dice"], per["unet_dice"])
-        per["delta_vs_unet"] = per["selected_dice"] - per["unet_dice"]
-        per_outputs.append(per)
+            per_outputs.append(per_policy_rows(policy_name, test_rows, use_switch, switch_threshold))
     return rows, pd.concat(per_outputs, ignore_index=True)
 
 
