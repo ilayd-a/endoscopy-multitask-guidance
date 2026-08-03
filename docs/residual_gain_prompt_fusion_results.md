@@ -37,6 +37,16 @@ This supports the core project idea: SAM is not a universal replacement for the
 classical model, but it can be a useful second-opinion pathway on difficult
 frames.
 
+The oracle portfolio is saved locally by:
+
+```bash
+python endoscopy_guidance/export_oracle_portfolio.py \
+  --prompt_quality_csv endoscopy_guidance/results/kvasir_external_120_prompt_quality.csv \
+  --unet_metrics_csv endoscopy_guidance/results/strong_unet_pretrained_kvasir_train_val_test/baseline_metrics.csv \
+  --output_csv endoscopy_guidance/results/kvasir120_unet_sam_oracle_portfolio.csv \
+  --summary_csv endoscopy_guidance/results/kvasir120_unet_sam_oracle_summary.csv
+```
+
 ## Ten-Split Residual-Fusion Benchmark
 
 The residual-gain model was evaluated with the same 10 random source-level
@@ -55,12 +65,33 @@ SAM/context prompt features plus UNet confidence and TTA uncertainty features.
 | Classical absolute-SAM validation switch | 0.8897 | -0.0009 | 0.0333 | 0.6198 | +0.0000 |
 | Quantum residual-gain validation switch | 0.8856 | -0.0051 | 0.0208 | 0.6198 | +0.0000 |
 
+## Two-Stage Switch Attempt
+
+A stronger two-stage version was also evaluated. It first ranks SAM candidates,
+then trains a separate frame-level gain regressor using predicted candidate
+gain, candidate-score distribution features, SAM confidence, UNet confidence,
+and TTA uncertainty features. This did not improve the mean result on the
+current 120-frame cache:
+
+| Policy | Mean selected Dice | Mean delta vs UNet | Mean SAM rate | Hard-frame selected Dice | Hard-frame delta vs UNet |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Always UNet | 0.8907 | +0.0000 | 0.0000 | 0.6198 | +0.0000 |
+| Classical residual-gain validation switch | 0.8910 | +0.0004 | 0.0375 | 0.6317 | +0.0119 |
+| Classical residual-gain meta-RF switch | 0.8876 | -0.0030 | 0.0375 | 0.6255 | +0.0057 |
+| Classical absolute-SAM meta-RF switch | 0.8892 | -0.0014 | 0.0417 | 0.6124 | -0.0075 |
+
+The meta-switch occasionally captures high-value hard-frame switches, but it
+also over-calls SAM on some splits. The simpler residual-gain validation switch
+remains the best deployable policy in this small-cache benchmark.
+
 ## Interpretation
 
 Residual-gain targeting produced the first validation-calibrated non-oracle
 switch with a positive mean gain over UNet. The gain is still small, but it is
 directionally important because it improves hard-frame Dice without broadly
-switching away from the strong UNet.
+switching away from the strong UNet. A more complex two-stage switch did not
+improve the aggregate result, suggesting that the current limitation is not a
+missing switch model alone.
 
 The remaining bottleneck is calibration and alternate-expert strength. The
 oracle result shows recoverable headroom, especially on hard frames, but only a

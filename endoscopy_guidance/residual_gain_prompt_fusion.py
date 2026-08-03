@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 
 THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
@@ -103,8 +103,16 @@ def selected_rows(eval_df: pd.DataFrame, scores: np.ndarray, model_name: str, ta
         ranked = group.sort_values("_score", ascending=False).reset_index(drop=True)
         top = ranked.iloc[0].copy()
         second = float(ranked.iloc[1]["_score"]) if len(ranked) > 1 else float(top["_score"])
+        score_values = group["_score"].to_numpy(dtype=float)
+        spread = float(np.nanmax(score_values) - np.nanmin(score_values))
         top["predicted_gain"] = float(top["_score"])
         top["score_margin"] = float(top["_score"]) - second
+        top["score_margin_norm"] = 0.0 if spread <= 0 else (float(top["_score"]) - second) / spread
+        top["candidate_pred_mean"] = float(np.nanmean(score_values))
+        top["candidate_pred_std"] = float(np.nanstd(score_values))
+        top["candidate_pred_max"] = float(np.nanmax(score_values))
+        top["candidate_pred_p90"] = float(np.nanpercentile(score_values, 90))
+        top["candidate_count"] = int(len(group))
         top["model"] = model_name
         top["target"] = target_name
         out.append(top)
@@ -150,6 +158,41 @@ def tune_threshold(val_rows: pd.DataFrame, score_col: str, min_rate: float, max_
     return best[1], best[2]
 
 
+def switch_feature_columns(rows: pd.DataFrame) -> list[str]:
+    base = [
+        "predicted_gain",
+        "score_margin",
+        "score_margin_norm",
+        "candidate_pred_mean",
+        "candidate_pred_std",
+        "candidate_pred_max",
+        "candidate_pred_p90",
+        "candidate_count",
+        "radius",
+        "heatmap_score",
+        "sam_score",
+        "center_dist",
+    ]
+    columns = [column for column in base if column in rows.columns]
+    columns.extend(column for column in UNET_FEATURE_COLUMNS if column in rows.columns)
+    columns.extend(sorted(column for column in rows.columns if column.startswith("tta_")))
+    return columns
+
+
+def fit_switch_model(name: str, train_rows: pd.DataFrame, seed: int):
+    columns = switch_feature_columns(train_rows)
+    X = train_rows[columns].to_numpy(dtype=np.float32)
+    y = train_rows["residual_gain"].to_numpy(dtype=float)
+    if name == "histgb":
+        model = HistGradientBoostingRegressor(max_iter=120, learning_rate=0.04, random_state=seed)
+    elif name == "rf":
+        model = RandomForestRegressor(n_estimators=500, min_samples_leaf=2, random_state=seed, n_jobs=-1)
+    else:
+        raise ValueError(f"Unknown switch model={name}")
+    model.fit(X, y)
+    return model, columns
+
+
 def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_mask: np.ndarray, val_mask: np.ndarray, test_mask: np.ndarray, args) -> tuple[list[dict], pd.DataFrame]:
     rows = []
     per_outputs = []
@@ -162,6 +205,7 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
             args.pqk_reps,
             args.seed,
         )
+        train_rows = selected_rows(qdf.loc[train_mask].copy(), model.predict(X[train_mask]), model_name, target_name)
         val_rows = selected_rows(qdf.loc[val_mask].copy(), model.predict(X[val_mask]), model_name, target_name)
         test_rows = selected_rows(qdf.loc[test_mask].copy(), model.predict(X[test_mask]), model_name, target_name)
         threshold, val_tune = tune_threshold(val_rows, "predicted_gain", args.min_sam_rate, args.max_sam_rate)
@@ -170,6 +214,20 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
         rows.append({**policy_metrics(f"{model_name}:{target_name}:always_sam", test_rows, np.ones(len(test_rows), dtype=bool)), "model": model_name, "target": target_name, "threshold": -np.inf})
         rows.append({**policy_metrics(f"{model_name}:{target_name}:oracle_best_of_two", test_rows, test_rows["sam_dice"].to_numpy(dtype=float) > test_rows["unet_dice"].to_numpy(dtype=float)), "model": model_name, "target": target_name, "threshold": np.nan})
         rows.append({**policy_metrics(f"{model_name}:{target_name}:val_gain_switch", test_rows, use_test), "model": model_name, "target": target_name, "threshold": threshold, "val_tuned_dice": val_tune["selected_dice"], "val_sam_rate": val_tune["sam_rate"]})
+        for switch_name in args.switch_models:
+            switch_model, switch_columns = fit_switch_model(switch_name, train_rows, args.seed)
+            val_rows[f"switch_gain_{switch_name}"] = switch_model.predict(val_rows[switch_columns].to_numpy(dtype=np.float32))
+            test_rows[f"switch_gain_{switch_name}"] = switch_model.predict(test_rows[switch_columns].to_numpy(dtype=np.float32))
+            switch_threshold, switch_val = tune_threshold(val_rows, f"switch_gain_{switch_name}", args.min_sam_rate, args.max_sam_rate)
+            use_switch = test_rows[f"switch_gain_{switch_name}"].to_numpy(dtype=float) >= switch_threshold
+            rows.append({
+                **policy_metrics(f"{model_name}:{target_name}:meta_{switch_name}_gain_switch", test_rows, use_switch),
+                "model": model_name,
+                "target": target_name,
+                "threshold": switch_threshold,
+                "val_tuned_dice": switch_val["selected_dice"],
+                "val_sam_rate": switch_val["sam_rate"],
+            })
         per = test_rows[[
             "sample_id",
             "source_file",
@@ -182,6 +240,7 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
             "residual_gain",
             "predicted_gain",
             "score_margin",
+            "score_margin_norm",
             "radius",
             "heatmap_score",
             "sam_score",
@@ -207,6 +266,7 @@ def main():
     parser.add_argument("--val_fraction", type=float, default=0.40)
     parser.add_argument("--min_sam_rate", type=float, default=0.0)
     parser.add_argument("--max_sam_rate", type=float, default=0.50)
+    parser.add_argument("--switch_models", nargs="+", choices=["histgb", "rf"], default=["histgb", "rf"])
     parser.add_argument("--pqk_components", type=int, default=8)
     parser.add_argument("--pqk_reps", type=int, default=2)
     parser.add_argument("--seed", type=int, default=123)
