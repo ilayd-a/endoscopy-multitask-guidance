@@ -138,7 +138,7 @@ def policy_metrics(name: str, rows: pd.DataFrame, use_sam: np.ndarray) -> dict:
     }
 
 
-def tune_threshold(val_rows: pd.DataFrame, score_col: str, min_rate: float, max_rate: float) -> tuple[float, dict]:
+def tune_threshold(val_rows: pd.DataFrame, score_col: str, min_rate: float, max_rate: float, hard_weight: float) -> tuple[float, dict]:
     scores = val_rows[score_col].to_numpy(dtype=float)
     thresholds = np.unique(np.quantile(scores, np.linspace(0, 1, 101)))
     thresholds = np.concatenate([thresholds, [float(scores.max() + 1e-6)]])
@@ -149,7 +149,11 @@ def tune_threshold(val_rows: pd.DataFrame, score_col: str, min_rate: float, max_
         if rate < min_rate or rate > max_rate:
             continue
         row = policy_metrics("val_tuned", val_rows, use_sam)
-        candidate = (row["selected_dice"], row["hard_selected_dice"], -row["sam_rate"])
+        hard_selected = row["hard_selected_dice"]
+        if np.isnan(hard_selected):
+            hard_selected = row["selected_dice"]
+        objective = row["selected_dice"] + hard_weight * hard_selected
+        candidate = (objective, row["selected_dice"], hard_selected, -row["sam_rate"])
         if best is None or candidate > best[0]:
             best = (candidate, float(threshold), row)
     if best is None:
@@ -208,7 +212,7 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
         train_rows = selected_rows(qdf.loc[train_mask].copy(), model.predict(X[train_mask]), model_name, target_name)
         val_rows = selected_rows(qdf.loc[val_mask].copy(), model.predict(X[val_mask]), model_name, target_name)
         test_rows = selected_rows(qdf.loc[test_mask].copy(), model.predict(X[test_mask]), model_name, target_name)
-        threshold, val_tune = tune_threshold(val_rows, "predicted_gain", args.min_sam_rate, args.max_sam_rate)
+        threshold, val_tune = tune_threshold(val_rows, "predicted_gain", args.min_sam_rate, args.max_sam_rate, args.hard_weight)
         use_test = test_rows["predicted_gain"].to_numpy(dtype=float) >= threshold
         rows.append({**policy_metrics(f"{model_name}:{target_name}:always_unet", test_rows, np.zeros(len(test_rows), dtype=bool)), "model": model_name, "target": target_name, "threshold": np.inf})
         rows.append({**policy_metrics(f"{model_name}:{target_name}:always_sam", test_rows, np.ones(len(test_rows), dtype=bool)), "model": model_name, "target": target_name, "threshold": -np.inf})
@@ -218,7 +222,7 @@ def evaluate_one_model(model_name: str, qdf: pd.DataFrame, X: np.ndarray, train_
             switch_model, switch_columns = fit_switch_model(switch_name, train_rows, args.seed)
             val_rows[f"switch_gain_{switch_name}"] = switch_model.predict(val_rows[switch_columns].to_numpy(dtype=np.float32))
             test_rows[f"switch_gain_{switch_name}"] = switch_model.predict(test_rows[switch_columns].to_numpy(dtype=np.float32))
-            switch_threshold, switch_val = tune_threshold(val_rows, f"switch_gain_{switch_name}", args.min_sam_rate, args.max_sam_rate)
+            switch_threshold, switch_val = tune_threshold(val_rows, f"switch_gain_{switch_name}", args.min_sam_rate, args.max_sam_rate, args.hard_weight)
             use_switch = test_rows[f"switch_gain_{switch_name}"].to_numpy(dtype=float) >= switch_threshold
             rows.append({
                 **policy_metrics(f"{model_name}:{target_name}:meta_{switch_name}_gain_switch", test_rows, use_switch),
@@ -266,6 +270,7 @@ def main():
     parser.add_argument("--val_fraction", type=float, default=0.40)
     parser.add_argument("--min_sam_rate", type=float, default=0.0)
     parser.add_argument("--max_sam_rate", type=float, default=0.50)
+    parser.add_argument("--hard_weight", type=float, default=0.0, help="Validation objective weight for hard-frame Dice, where hard means UNet Dice < 0.80.")
     parser.add_argument("--switch_models", nargs="+", choices=["histgb", "rf"], default=["histgb", "rf"])
     parser.add_argument("--pqk_components", type=int, default=8)
     parser.add_argument("--pqk_reps", type=int, default=2)

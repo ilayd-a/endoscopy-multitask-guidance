@@ -37,6 +37,39 @@ This supports the core project idea: SAM is not a universal replacement for the
 classical model, but it can be a useful second-opinion pathway on difficult
 frames.
 
+## Multi-Radius Candidate Expansion
+
+The strongest improvement came from expanding the prompt family instead of
+changing only the downstream switch. The original external cache used one box
+radius, 48 pixels. The expanded cache evaluates four radii, 32, 48, 64, and 96
+pixels, for the same candidate points.
+
+| Quantity | Single radius | Multi-radius |
+| --- | ---: | ---: |
+| Candidate rows | 10,078 | 40,312 |
+| Mean UNet Dice | 0.8916 | 0.8916 |
+| Mean best-SAM Dice | 0.8102 | 0.9145 |
+| Oracle best-of-UNet/SAM Dice | 0.9165 | 0.9331 |
+| Oracle gain vs UNet | +0.0249 | +0.0414 |
+| Frames where best SAM beats UNet | 24 / 120, 20.0% | 43 / 120, 35.8% |
+
+For hard UNet frames:
+
+| Quantity | Single radius | Multi-radius |
+| --- | ---: | ---: |
+| Hard frames | 18 / 120 | 18 / 120 |
+| Mean hard-frame UNet Dice | 0.6135 | 0.6135 |
+| Mean hard-frame best-SAM Dice | 0.6845 | 0.8368 |
+| Hard-frame oracle best-of-UNet/SAM Dice | 0.7590 | 0.8410 |
+| Hard-frame oracle gain vs UNet | +0.1454 | +0.2275 |
+| Hard frames where best SAM beats UNet | 12 / 18, 66.7% | 17 / 18, 94.4% |
+
+This is the clearest publication signal so far. Prompt diversity turns the
+alternate quantum/SAM branch from a niche rescue option into a broad hard-frame
+second opinion. It also gives a concrete research hypothesis: quantum-guided
+candidate generation may be valuable when it increases the diversity of
+high-quality prompts available to a frozen foundation segmenter.
+
 The oracle portfolio is saved locally by:
 
 ```bash
@@ -84,6 +117,44 @@ The meta-switch occasionally captures high-value hard-frame switches, but it
 also over-calls SAM on some splits. The simpler residual-gain validation switch
 remains the best deployable policy in this small-cache benchmark.
 
+## Multi-Radius Learned Switches
+
+The multi-radius cache was then evaluated with the same 10 source-level splits.
+Two feature settings were tested: the compact 49-dimensional prompt features and
+an expanded 829-dimensional feature matrix that appends local frozen-SAM image
+embedding descriptors plus within-frame candidate context/rank features.
+
+| Setting / Policy | Mean selected Dice | Mean delta vs UNet | Mean SAM rate | Hard-frame selected Dice | Hard-frame delta vs UNet |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Multi-radius selected-candidate oracle | 0.9025 | +0.0119 | 0.0958 | 0.6786 | +0.0588 |
+| Multi-radius residual-gain meta-RF switch | 0.8955 | +0.0048 | 0.0292 | 0.6437 | +0.0239 |
+| Multi-radius residual-gain validation switch | 0.8919 | +0.0012 | 0.0125 | 0.6263 | +0.0065 |
+| Multi-radius + SAM-embedding selected-candidate oracle | 0.9116 | +0.0210 | 0.1458 | 0.7366 | +0.1167 |
+| Multi-radius + SAM-embedding residual-gain meta-RF switch | 0.8943 | +0.0037 | 0.0292 | 0.6431 | +0.0233 |
+| Multi-radius + SAM-embedding residual-gain validation switch | 0.8929 | +0.0022 | 0.0250 | 0.6351 | +0.0153 |
+| Always UNet | 0.8907 | +0.0000 | 0.0000 | 0.6198 | +0.0000 |
+
+The richer features improved the learned selected-candidate oracle, meaning the
+prompt ranker has more recoverable signal, but the deployable switch still
+captures only a small part of that headroom. This is consistent with a
+small-calibration-data problem: positive-gain SAM frames are uncommon overall
+even though they are concentrated among hard frames.
+
+## Hard-Weighted Calibration
+
+A hard-frame-weighted calibration option was added:
+
+```bash
+--hard_weight 1.0
+```
+
+This tunes the validation threshold using mean Dice plus hard-frame Dice. It is
+implemented for follow-up experiments, but it is not the recommended headline
+setting on the current 120-frame cache. Across 10 splits with the SAM-embedding
+features, the best hard-weighted deployable policy had mean Dice 0.8916
+(+0.0009 vs UNet) and hard-frame Dice 0.6351 (+0.0153 vs UNet). It switched more
+often, but also over-switched on some splits.
+
 ## Interpretation
 
 Residual-gain targeting produced the first validation-calibrated non-oracle
@@ -93,11 +164,11 @@ switching away from the strong UNet. A more complex two-stage switch did not
 improve the aggregate result, suggesting that the current limitation is not a
 missing switch model alone.
 
-The remaining bottleneck is calibration and alternate-expert strength. The
-oracle result shows recoverable headroom, especially on hard frames, but only a
-small number of held-out frames per split have positive-gain SAM candidates.
-With only 48 calibration frames per split, threshold selection is unstable and
-usually abstains.
+The remaining bottleneck is calibration, not the existence of a better alternate
+mask. The full multi-radius oracle shows large recoverable headroom, especially
+on hard frames, but only a small number of held-out frames per split have
+positive-gain SAM candidates. With only 48 calibration frames per split,
+threshold selection is unstable and usually abstains.
 
 ## Next Scientific Step
 
@@ -106,8 +177,8 @@ coverage, not to claim a large result from the 120-frame cache. A stronger study
 should:
 
 1. Expand cached SAM candidate quality to the full Kvasir validation/test pool.
-2. Add multiple prompt radii or richer prompt families, because the current
-   Kvasir cache only uses radius 48.
+2. Keep multiple prompt radii and add richer prompt families, because prompt
+   diversity is now the strongest observed source of improvement.
 3. Evaluate residual-gain switching with confidence intervals and paired
    source-level tests.
 4. Keep UNet as the default output and frame the quantum/SAM branch as

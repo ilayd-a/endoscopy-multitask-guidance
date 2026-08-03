@@ -68,7 +68,9 @@ def main():
     parser.add_argument("--top_n", type=int, default=20)
     parser.add_argument("--nms_dist", type=int, default=24)
     parser.add_argument("--patch_radius", type=int, default=24)
-    parser.add_argument("--radius", type=int, default=48)
+    parser.add_argument("--radius", type=int, default=48, help="Single prompt box radius kept for backward compatibility.")
+    parser.add_argument("--radii", type=int, nargs="+", default=[], help="One or more prompt box radii. Overrides --radius when provided.")
+    parser.add_argument("--max_samples", type=int, default=0, help="If >0, build only the first N exported samples.")
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
 
@@ -86,35 +88,39 @@ def main():
     out_rows = []
     out_features = []
     sample_ids = sorted(df["sample_id"].unique())
+    if args.max_samples > 0:
+        sample_ids = sample_ids[: args.max_samples]
+    radii = args.radii if args.radii else [args.radius]
     for sample_count, sid in enumerate(sample_ids, start=1):
         sample = df[df["sample_id"].eq(sid)].copy()
         image = np.load(data_dir / f"image_{sid}.npy")
         gt = np.load(data_dir / f"gt_mask_{sid}.npy")
         set_cached_or_compute_image(predictor, image, sid, embedding_cache)
         points = [(int(row.y), int(row.x)) for row in sample.itertuples(index=False)]
-        masks, sam_scores = sam_prompt_masks_all(predictor, points, image.shape[:2], args.radius)
-        for row, mask, sam_score in zip(sample.itertuples(index=True), masks, sam_scores):
-            dice, iou = dice_iou(mask, gt)
-            out_rows.append({
-                "sample_id": sid,
-                "candidate_index": int(row.Index),
-                "source_file": row.source_file,
-                "source_mask": row.source_mask,
-                "source_group": row.source_group,
-                "sequence_id": -1,
-                "split": "external",
-                "y": int(row.y),
-                "x": int(row.x),
-                "radius": int(args.radius),
-                "heatmap_score": float(row.heatmap_score),
-                "point_hit": int(row.label > 0),
-                "center_dist": float(row.center_dist),
-                "sam_score": float(sam_score),
-                "sam_dice": float(dice),
-                "sam_iou": float(iou),
-            })
-            radius_feature = np.asarray([args.radius / 128.0, sam_score], dtype=float)
-            out_features.append(np.concatenate([X[int(row.Index)], radius_feature]))
+        for radius in radii:
+            masks, sam_scores = sam_prompt_masks_all(predictor, points, image.shape[:2], radius)
+            for row, mask, sam_score in zip(sample.itertuples(index=True), masks, sam_scores):
+                dice, iou = dice_iou(mask, gt)
+                out_rows.append({
+                    "sample_id": sid,
+                    "candidate_index": int(row.Index),
+                    "source_file": row.source_file,
+                    "source_mask": row.source_mask,
+                    "source_group": row.source_group,
+                    "sequence_id": -1,
+                    "split": "external",
+                    "y": int(row.y),
+                    "x": int(row.x),
+                    "radius": int(radius),
+                    "heatmap_score": float(row.heatmap_score),
+                    "point_hit": int(row.label > 0),
+                    "center_dist": float(row.center_dist),
+                    "sam_score": float(sam_score),
+                    "sam_dice": float(dice),
+                    "sam_iou": float(iou),
+                })
+                radius_feature = np.asarray([radius / 128.0, sam_score], dtype=float)
+                out_features.append(np.concatenate([X[int(row.Index)], radius_feature]))
         if sample_count % 10 == 0 or sample_count == len(sample_ids):
             print(f"[external-quality] {sample_count}/{len(sample_ids)} samples", flush=True)
 
