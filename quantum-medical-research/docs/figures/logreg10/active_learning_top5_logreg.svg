@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="560" viewBox="0 0 920 560">
+<rect width="100%" height="100%" fill="white"/>
+<text x="90" y="28" font-family="Arial, sans-serif" font-size="20" font-weight="700">Top-5 target recovery</text>
+<line x1="90" y1="480" x2="660" y2="480" stroke="#333" stroke-width="1.2"/>
+<line x1="90" y1="55" x2="90" y2="480" stroke="#333" stroke-width="1.2"/>
+<line x1="90" y1="480.0" x2="660" y2="480.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="484.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.19</text>
+<line x1="90" y1="395.0" x2="660" y2="395.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="399.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.22</text>
+<line x1="90" y1="310.0" x2="660" y2="310.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="314.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.25</text>
+<line x1="90" y1="225.0" x2="660" y2="225.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="229.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.29</text>
+<line x1="90" y1="140.0" x2="660" y2="140.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="144.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.32</text>
+<line x1="90" y1="55.0" x2="660" y2="55.0" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="59.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12">0.35</text>
+<text x="90.0" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12">40</text>
+<text x="232.5" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12">80</text>
+<text x="375.0" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12">120</text>
+<text x="517.5" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12">160</text>
+<text x="660.0" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12">200</text>
+<text x="375.0" y="536" text-anchor="middle" font-family="Arial, sans-serif" font-size="14">Labeled candidate annotations</text>
+<polyline points="90.0,301.8 232.5,256.2 375.0,252.9 517.5,264.5 660.0,257.4" fill="none" stroke="#4c78a8" stroke-width="2.4"/>
+<line x1="90.0" y1="243.9" x2="90.0" y2="360.3" stroke="#4c78a8" stroke-width="1.2" opacity="0.6"/>
+<circle cx="90.0" cy="301.8" r="4" fill="#4c78a8"/>
+<line x1="232.5" y1="195.6" x2="232.5" y2="317.6" stroke="#4c78a8" stroke-width="1.2" opacity="0.6"/>
+<circle cx="232.5" cy="256.2" r="4" fill="#4c78a8"/>
+<line x1="375.0" y1="191.1" x2="375.0" y2="315.3" stroke="#4c78a8" stroke-width="1.2" opacity="0.6"/>
+<circle cx="375.0" cy="252.9" r="4" fill="#4c78a8"/>
+<line x1="517.5" y1="205.4" x2="517.5" y2="325.1" stroke="#4c78a8" stroke-width="1.2" opacity="0.6"/>
+<circle cx="517.5" cy="264.5" r="4" fill="#4c78a8"/>
+<line x1="660.0" y1="192.9" x2="660.0" y2="322.4" stroke="#4c78a8" stroke-width="1.2" opacity="0.6"/>
+<circle cx="660.0" cy="257.4" r="4" fill="#4c78a8"/>
+<polyline points="90.0,301.8 232.5,318.8 375.0,317.6 517.5,265.7 660.0,304.5" fill="none" stroke="#f58518" stroke-width="2.4"/>
+<line x1="90.0" y1="243.9" x2="90.0" y2="360.3" stroke="#f58518" stroke-width="1.2" opacity="0.6"/>
+<circle cx="90.0" cy="301.8" r="4" fill="#f58518"/>
+<line x1="232.5" y1="249.0" x2="232.5" y2="389.6" stroke="#f58518" stroke-width="1.2" opacity="0.6"/>
+<circle cx="232.5" cy="318.8" r="4" fill="#f58518"/>
+<line x1="375.0" y1="247.8" x2="375.0" y2="385.1" stroke="#f58518" stroke-width="1.2" opacity="0.6"/>
+<circle cx="375.0" cy="317.6" r="4" fill="#f58518"/>
+<line x1="517.5" y1="192.0" x2="517.5" y2="337.3" stroke="#f58518" stroke-width="1.2" opacity="0.6"/>
+<circle cx="517.5" cy="265.7" r="4" fill="#f58518"/>
+<line x1="660.0" y1="235.6" x2="660.0" y2="372.6" stroke="#f58518" stroke-width="1.2" opacity="0.6"/>
+<circle cx="660.0" cy="304.5" r="4" fill="#f58518"/>
+<polyline points="90.0,301.8 232.5,302.1 375.0,318.2 517.5,271.7 660.0,290.2" fill="none" stroke="#54a24b" stroke-width="2.4"/>
+<line x1="90.0" y1="243.9" x2="90.0" y2="360.3" stroke="#54a24b" stroke-width="1.2" opacity="0.6"/>
+<circle cx="90.0" cy="301.8" r="4" fill="#54a24b"/>
+<line x1="232.5" y1="229.9" x2="232.5" y2="376.4" stroke="#54a24b" stroke-width="1.2" opacity="0.6"/>
+<circle cx="232.5" cy="302.1" r="4" fill="#54a24b"/>
+<line x1="375.0" y1="237.7" x2="375.0" y2="398.5" stroke="#54a24b" stroke-width="1.2" opacity="0.6"/>
+<circle cx="375.0" cy="318.2" r="4" fill="#54a24b"/>
+<line x1="517.5" y1="205.1" x2="517.5" y2="337.3" stroke="#54a24b" stroke-width="1.2" opacity="0.6"/>
+<circle cx="517.5" cy="271.7" r="4" fill="#54a24b"/>
+<line x1="660.0" y1="210.5" x2="660.0" y2="370.8" stroke="#54a24b" stroke-width="1.2" opacity="0.6"/>
+<circle cx="660.0" cy="290.2" r="4" fill="#54a24b"/>
+<polyline points="90.0,nan 232.5,nan 375.0,nan 517.5,nan 660.0,nan" fill="none" stroke="#b279a2" stroke-width="2.4"/>
+<line x1="90.0" y1="nan" x2="90.0" y2="nan" stroke="#b279a2" stroke-width="1.2" opacity="0.6"/>
+<circle cx="90.0" cy="nan" r="4" fill="#b279a2"/>
+<line x1="232.5" y1="nan" x2="232.5" y2="nan" stroke="#b279a2" stroke-width="1.2" opacity="0.6"/>
+<circle cx="232.5" cy="nan" r="4" fill="#b279a2"/>
+<line x1="375.0" y1="nan" x2="375.0" y2="nan" stroke="#b279a2" stroke-width="1.2" opacity="0.6"/>
+<circle cx="375.0" cy="nan" r="4" fill="#b279a2"/>
+<line x1="517.5" y1="nan" x2="517.5" y2="nan" stroke="#b279a2" stroke-width="1.2" opacity="0.6"/>
+<circle cx="517.5" cy="nan" r="4" fill="#b279a2"/>
+<line x1="660.0" y1="nan" x2="660.0" y2="nan" stroke="#b279a2" stroke-width="1.2" opacity="0.6"/>
+<circle cx="660.0" cy="nan" r="4" fill="#b279a2"/>
+<polyline points="90.0,301.8 232.5,261.2 375.0,227.5 517.5,215.6 660.0,267.8" fill="none" stroke="#e45756" stroke-width="2.4"/>
+<line x1="90.0" y1="243.9" x2="90.0" y2="360.3" stroke="#e45756" stroke-width="1.2" opacity="0.6"/>
+<circle cx="90.0" cy="301.8" r="4" fill="#e45756"/>
+<line x1="232.5" y1="195.6" x2="232.5" y2="326.6" stroke="#e45756" stroke-width="1.2" opacity="0.6"/>
+<circle cx="232.5" cy="261.2" r="4" fill="#e45756"/>
+<line x1="375.0" y1="166.3" x2="375.0" y2="289.9" stroke="#e45756" stroke-width="1.2" opacity="0.6"/>
+<circle cx="375.0" cy="227.5" r="4" fill="#e45756"/>
+<line x1="517.5" y1="136.5" x2="517.5" y2="289.3" stroke="#e45756" stroke-width="1.2" opacity="0.6"/>
+<circle cx="517.5" cy="215.6" r="4" fill="#e45756"/>
+<line x1="660.0" y1="202.1" x2="660.0" y2="331.4" stroke="#e45756" stroke-width="1.2" opacity="0.6"/>
+<circle cx="660.0" cy="267.8" r="4" fill="#e45756"/>
+<line x1="690" y1="75" x2="712" y2="75" stroke="#4c78a8" stroke-width="3"/>
+<text x="720" y="80" font-family="Arial, sans-serif" font-size="13">Random</text>
+<line x1="690" y1="103" x2="712" y2="103" stroke="#f58518" stroke-width="3"/>
+<text x="720" y="108" font-family="Arial, sans-serif" font-size="13">Classical uncertainty</text>
+<line x1="690" y1="131" x2="712" y2="131" stroke="#54a24b" stroke-width="3"/>
+<text x="720" y="136" font-family="Arial, sans-serif" font-size="13">PQK uncertainty</text>
+<line x1="690" y1="159" x2="712" y2="159" stroke="#b279a2" stroke-width="3"/>
+<text x="720" y="164" font-family="Arial, sans-serif" font-size="13">PQK uncertainty + diversity</text>
+<line x1="690" y1="187" x2="712" y2="187" stroke="#e45756" stroke-width="3"/>
+<text x="720" y="192" font-family="Arial, sans-serif" font-size="13">PQK hybrid</text>
+</svg>

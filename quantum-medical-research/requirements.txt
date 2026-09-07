@@ -1,0 +1,17 @@
+# Core Data Science
+numpy>=2.0        
+matplotlib
+opencv-python
+tqdm
+pandas
+
+# Deep Learning (Standard CPU/CUDA agnostic install)
+torch
+torchvision
+
+# models
+monai
+segmentation-models-pytorch
+
+# eval
+scikit-image
