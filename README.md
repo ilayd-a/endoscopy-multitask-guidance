@@ -10,6 +10,27 @@ robustness. Pixel-wise probability outputs are used as guidance heatmaps and
 evaluated with localization metrics including pointing-game accuracy (PG) and
 peak-to-center distance (PCD).
 
+## Integrated research code
+
+The latest classical training and evaluation pipeline lives in the top-level
+`models/`, `dataset/`, and `eval/` directories. The quantum-assisted research
+is included in [`quantum-medical-research/`](quantum-medical-research/README.md):
+
+- `endoscopy_guidance/`: quantum prompt selection, residual refinement, active
+  learning, and external-validation experiments.
+- `EndoscopicBladderTissue/`: bladder tissue classification benchmarks.
+- `docs/`: research reports, publication drafts, and qualitative figures.
+- `scripts/make_iros_figures.py`: publication figure generation (requires Pillow
+  and ReportLab, with the paired-statistics inputs included).
+- `classical_ml/`: the classical baseline snapshot used by those research
+  experiments; use the top-level pipeline for current classical development.
+
+Install research dependencies from `quantum-medical-research/requirements.txt`
+in a suitable research environment. Dataset downloads, generated embedding
+caches, and local training outputs are not bundled; follow the relevant module
+instructions to prepare them. Experimental quantum results are separate from
+the classical evaluation described below.
+
 ## Current Framing
 
 The current project should be framed as:
