@@ -110,7 +110,7 @@ def build_features(
 
 
 def feature_names() -> list[str]:
-    names = ["y_norm", "x_norm", "prob", "pred", "uncertainty", "gt_center_dist"]
+    names = ["y_norm", "x_norm", "prob", "pred", "uncertainty", "pred_center_dist"]
     for prefix in ["prob", "pred"]:
         names.extend([f"{prefix}_mean", f"{prefix}_std", f"{prefix}_min", f"{prefix}_max"])
     for channel in ["r", "g", "b"]:
@@ -144,7 +144,7 @@ def main():
         gt = np.load(base / "gt_masks" / f"{sid}.npy").astype(np.uint8)
         prob = np.load(base / "prob_maps" / f"{sid}.npy").astype(np.float32)
         pred = np.load(base / "pred_masks" / f"{sid}.npy").astype(np.uint8)
-        centroid = mask_centroid(gt)
+        centroid = mask_centroid(pred)
         uncertainty = 1.0 - np.abs(prob - 0.5) * 2.0
         regions = {
             "false_positive": (pred == 1) & (gt == 0),

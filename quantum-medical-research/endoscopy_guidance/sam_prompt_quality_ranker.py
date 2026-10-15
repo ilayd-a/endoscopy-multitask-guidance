@@ -35,6 +35,7 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from publication_benchmark_ebtc import ProjectedQuantumKernelSVC
+from build_prompt_context_features import peak_distance
 from candidate_ranking_benchmark import build_candidates, fit_low_dim
 from sam_quantum_prompt_benchmark import (
     choose_device,
@@ -226,7 +227,7 @@ def prefilter_eval_candidates(qdf: pd.DataFrame, X: np.ndarray, cap: int) -> tup
     sample_ids = rows["sample_id"].to_numpy()
     heatmap = per_sample_normalize(rows["heatmap_score"].to_numpy(dtype=float), sample_ids)
     sam = per_sample_normalize(rows["sam_score"].to_numpy(dtype=float), sample_ids)
-    center = 1.0 - per_sample_normalize(rows["center_dist"].to_numpy(dtype=float), sample_ids)
+    center = 1.0 - per_sample_normalize(peak_distance(rows), sample_ids)
     rows["_prefilter_score"] = 0.45 * heatmap + 0.45 * sam + 0.10 * center
     keep_idx = rows.sort_values("_prefilter_score", ascending=False).groupby("sample_id").head(cap).index.to_numpy()
     keep_idx = np.sort(keep_idx)

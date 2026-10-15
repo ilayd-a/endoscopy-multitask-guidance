@@ -6,6 +6,12 @@ Append inference-available candidate context features to a prompt feature cache.
 These features describe where each candidate sits relative to other candidates
 in the same frame: normalized scores, ranks, position, and simple geometry.
 They do not use ground-truth masks or SAM Dice labels.
+
+The prompt-quality CSV column `center_dist` is the distance to the GT mask
+centroid (see candidate_ranking_benchmark.candidate_features), so it must not
+be used as an input. The centre terms below use `peak_dist` instead: the
+distance to the frame's highest-heatmap candidate, which is available at
+inference time.
 """
 
 from __future__ import annotations
@@ -44,21 +50,31 @@ def percentile_rank(values: np.ndarray, descending: bool) -> np.ndarray:
     return 1.0 - ranks / denom
 
 
+def peak_distance(qdf: pd.DataFrame) -> np.ndarray:
+    """Per-candidate distance to the frame's highest-heatmap candidate point (inference-safe)."""
+    peak = qdf.loc[qdf.groupby("sample_id", sort=False)["heatmap_score"].idxmax(), ["sample_id", "y", "x"]]
+    peak = peak.set_index("sample_id")
+    py = qdf["sample_id"].map(peak["y"]).to_numpy(dtype=float)
+    px = qdf["sample_id"].map(peak["x"]).to_numpy(dtype=float)
+    return np.hypot(qdf["y"].to_numpy(dtype=float) - py, qdf["x"].to_numpy(dtype=float) - px)
+
+
 def build_context(qdf: pd.DataFrame) -> np.ndarray:
     out = np.zeros((len(qdf), 12), dtype=np.float32)
     cursor = 0
+    qdf = qdf.assign(peak_dist=peak_distance(qdf))
     for _, group in qdf.groupby("sample_id", sort=False):
         n = len(group)
         heatmap = group["heatmap_score"].to_numpy(dtype=float)
         sam = group["sam_score"].to_numpy(dtype=float)
-        center_dist = group["center_dist"].to_numpy(dtype=float)
+        peak_dist = group["peak_dist"].to_numpy(dtype=float)
         y = group["y"].to_numpy(dtype=float)
         x = group["x"].to_numpy(dtype=float)
         radius = group["radius"].to_numpy(dtype=float)
 
         heatmap_norm = minmax(heatmap)
         sam_norm = minmax(sam)
-        center_norm = minmax(center_dist)
+        center_norm = minmax(peak_dist)
         inv_center = 1.0 - center_norm
         y_max = float(np.nanmax(y)) if np.isfinite(y).any() else 1.0
         x_max = float(np.nanmax(x)) if np.isfinite(x).any() else 1.0
@@ -67,7 +83,7 @@ def build_context(qdf: pd.DataFrame) -> np.ndarray:
         radius_norm = (radius / 128.0).astype(np.float32)
         heatmap_rank = percentile_rank(heatmap, descending=True)
         sam_rank = percentile_rank(sam, descending=True)
-        center_rank = percentile_rank(center_dist, descending=False)
+        center_rank = percentile_rank(peak_dist, descending=False)
         combined_prior = (0.45 * heatmap_norm + 0.45 * sam_norm + 0.10 * inv_center).astype(np.float32)
         heatmap_sam_gap = (heatmap_norm - sam_norm).astype(np.float32)
 
