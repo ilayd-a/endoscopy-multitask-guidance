@@ -107,7 +107,8 @@ def frame_features(base: Path, row, args: argparse.Namespace) -> tuple[np.ndarra
         priority = np.maximum(prob[ys, xs], 1.0 - np.abs(prob[ys, xs] - 0.5) * 2.0)
         keep = np.argsort(priority)[-args.max_candidates_per_frame :]
         ys, xs = ys[keep], xs[keep]
-    centroid = mask_centroid(gt)
+    # Match training features; ground truth is used only for scoring.
+    centroid = mask_centroid(pred)
     feats = [
         build_features(image_float, prob, pred, centroid, int(y), int(x), args.patch_radius)
         for y, x in zip(ys, xs)

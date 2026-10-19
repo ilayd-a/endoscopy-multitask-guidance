@@ -27,6 +27,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
+from build_prompt_context_features import peak_distance
 from sam_prompt_active_learning import QuantumFeatureRidgeRegressor
 
 
@@ -81,6 +82,8 @@ def load_augmented_features(args) -> tuple[pd.DataFrame, np.ndarray]:
 
     X_aug = np.concatenate([X, *extra], axis=1).astype(np.float32)
     qdf["residual_gain"] = qdf["sam_dice"].to_numpy(dtype=float) - qdf["unet_dice"].to_numpy(dtype=float)
+    # center_dist is the distance to the GT centroid; switch features use peak_dist instead.
+    qdf["peak_dist"] = peak_distance(qdf)
     qdf["beats_unet"] = qdf["residual_gain"] > 0
     return qdf, X_aug
 
@@ -204,7 +207,7 @@ def switch_feature_columns(rows: pd.DataFrame) -> list[str]:
         "radius",
         "heatmap_score",
         "sam_score",
-        "center_dist",
+        "peak_dist",
     ]
     columns = [column for column in base if column in rows.columns]
     columns.extend(column for column in UNET_FEATURE_COLUMNS if column in rows.columns)

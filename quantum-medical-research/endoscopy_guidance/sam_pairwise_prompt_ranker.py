@@ -32,6 +32,7 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from publication_benchmark_ebtc import ProjectedQuantumKernelSVC
+from build_prompt_context_features import peak_distance
 from sam_prompt_quality_ranker import per_sample_normalize, sample_level_eval
 
 
@@ -60,7 +61,7 @@ def prefilter_eval_rows(qdf: pd.DataFrame, Q: np.ndarray, cap: int) -> tuple[pd.
     sample_ids = rows["sample_id"].to_numpy()
     heatmap = per_sample_normalize(rows["heatmap_score"].to_numpy(dtype=float), sample_ids)
     sam = per_sample_normalize(rows["sam_score"].to_numpy(dtype=float), sample_ids)
-    center = -per_sample_normalize(rows["center_dist"].to_numpy(dtype=float), sample_ids)
+    center = -per_sample_normalize(peak_distance(rows), sample_ids)
     rows["_prefilter"] = 0.45 * heatmap + 0.45 * sam + 0.10 * center
     keep_idx = rows.sort_values("_prefilter", ascending=False).groupby("sample_id").head(cap).index.to_numpy()
     keep_idx = np.sort(keep_idx)

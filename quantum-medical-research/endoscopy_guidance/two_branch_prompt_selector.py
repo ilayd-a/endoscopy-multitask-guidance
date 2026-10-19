@@ -27,6 +27,7 @@ if str(EBTC_EXPERIMENTS) not in sys.path:
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
+from build_prompt_context_features import peak_distance
 from candidate_ranking_benchmark import fit_low_dim
 from sam_prompt_quality_ranker import per_sample_normalize, projected_quantum_features, sample_level_eval
 
@@ -62,7 +63,7 @@ def shortlist_rerank_scores(
     sample_ids = qdf["sample_id"].to_numpy()
     sam_norm = per_sample_normalize(qdf["sam_score"].to_numpy(dtype=float), sample_ids)
     heatmap_norm = per_sample_normalize(qdf["heatmap_score"].to_numpy(dtype=float), sample_ids)
-    center_norm = per_sample_normalize(qdf["center_dist"].to_numpy(dtype=float), sample_ids)
+    center_norm = per_sample_normalize(peak_distance(qdf), sample_ids)
     if rerank_mode == "sam":
         rerank = sam_norm
     elif rerank_mode == "heatmap":
