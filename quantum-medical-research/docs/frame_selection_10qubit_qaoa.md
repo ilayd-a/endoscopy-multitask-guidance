@@ -157,6 +157,70 @@ Mean +0.0073; CI > 0 on 0 of 5 splits. **Pass rule (at least 4 of 5) not met.**
 Split 1, `qaoa - block_greedy`: +0.0060, CI [-0.0153, +0.0280] (tie).
 `qaoa - pool_random`: CI > 0 on split 4 only.
 
+### Absolute Dice (report halves, mean of seeds 20-31)
+
+The tables above give differences. These are the Dice values themselves: `no_finetune` is the
+pretrained model, every other column is after fine-tuning on that method's 100 frames
+(`all_800`: all 800 frames). `qaoa D10` / `qaoa D11` are the circuit's selections under the
+surrogate and the block objective. Simulated circuit, no QPU.
+
+**CVC rep hard** (primary outcome; frames with pretrained Dice < 0.80)
+
+| split | n | no_finetune | qaoa D10 | qaoa D11 | pool_random | hardest_k | all_800 | random_k | kcenter | craig | align_topk | gradmatch_omp | qubo_div |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 115 | 0.4616 | 0.6032 | 0.5875 | 0.5839 | 0.5775 | 0.5755 | 0.5641 | 0.5519 | 0.5339 | 0.5682 | 0.5130 | 0.5652 |
+| 1 | 72 | 0.4719 | 0.6285 | 0.6273 | 0.6152 | 0.6216 | 0.5981 | 0.5843 | 0.6067 | 0.5772 | 0.5990 | 0.5755 | 0.6089 |
+| 2 | 112 | 0.4984 | 0.5957 | 0.6163 | 0.6071 | 0.6191 | 0.5887 | 0.5740 | 0.6154 | 0.5911 | 0.5946 | 0.5899 | 0.6061 |
+| 3 | 101 | 0.4800 | 0.5969 | 0.5773 | 0.5753 | 0.5771 | 0.5667 | 0.5613 | 0.5693 | 0.5369 | 0.5662 | 0.5411 | 0.5691 |
+| 4 | 120 | 0.4700 | 0.5735 | 0.5945 | 0.5631 | 0.5713 | 0.5498 | 0.5481 | 0.5457 | 0.5339 | 0.5462 | 0.5362 | 0.5604 |
+| mean |  | 0.4764 | 0.5996 | 0.6006 | 0.5889 | 0.5933 | 0.5758 | 0.5664 | 0.5778 | 0.5546 | 0.5748 | 0.5511 | 0.5820 |
+
+Seed standard deviation on this set is 0.009-0.025 per method and split, larger than the
+qaoa - hardest_k differences of the means (+0.006 and +0.007).
+
+`block_greedy` (classical greedy on the same QUBO), where it selects a different subset:
+D10 split 1 0.6621, split 2 0.6099, split 3 0.5965; D11 split 1 0.6212.
+
+**CVC rep full** (all report-half CVC frames)
+
+| split | n | no_finetune | qaoa D10 | qaoa D11 | pool_random | hardest_k | all_800 | random_k | kcenter | craig | align_topk | gradmatch_omp | qubo_div |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 324 | 0.7514 | 0.8048 | 0.7969 | 0.7978 | 0.7921 | 0.7952 | 0.7886 | 0.7847 | 0.7748 | 0.7888 | 0.7577 | 0.7879 |
+| 1 | 320 | 0.8175 | 0.8584 | 0.8574 | 0.8549 | 0.8547 | 0.8499 | 0.8448 | 0.8530 | 0.8468 | 0.8496 | 0.8360 | 0.8525 |
+| 2 | 324 | 0.7690 | 0.7916 | 0.8037 | 0.8052 | 0.8081 | 0.7993 | 0.7928 | 0.8103 | 0.8016 | 0.7982 | 0.7900 | 0.8043 |
+| 3 | 316 | 0.7831 | 0.8193 | 0.8107 | 0.8129 | 0.8110 | 0.8100 | 0.8069 | 0.8105 | 0.7977 | 0.8066 | 0.7897 | 0.8095 |
+| 4 | 304 | 0.7369 | 0.7710 | 0.7810 | 0.7707 | 0.7724 | 0.7647 | 0.7636 | 0.7626 | 0.7585 | 0.7600 | 0.7552 | 0.7684 |
+| mean |  | 0.7716 | 0.8090 | 0.8099 | 0.8083 | 0.8077 | 0.8038 | 0.7993 | 0.8042 | 0.7959 | 0.8007 | 0.7857 | 0.8045 |
+
+**Kvasir rep hard** (only 13 frames per split; noisy)
+
+| split | n | no_finetune | qaoa D10 | qaoa D11 | pool_random | hardest_k | all_800 | random_k | kcenter | craig | align_topk | gradmatch_omp | qubo_div |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 13 | 0.5953 | 0.6145 | 0.6081 | 0.6163 | 0.6194 | 0.6043 | 0.6101 | 0.5868 | 0.6080 | 0.6232 | 0.6249 | 0.6271 |
+| 1 | 13 | 0.4554 | 0.5684 | 0.5571 | 0.5481 | 0.5386 | 0.5361 | 0.5288 | 0.5390 | 0.5109 | 0.5483 | 0.5127 | 0.5505 |
+| 2 | 13 | 0.5515 | 0.5589 | 0.5538 | 0.5594 | 0.5622 | 0.5480 | 0.5561 | 0.5254 | 0.5421 | 0.5541 | 0.5512 | 0.5683 |
+| 3 | 13 | 0.5068 | 0.5556 | 0.5584 | 0.5430 | 0.5381 | 0.5339 | 0.5352 | 0.5238 | 0.5175 | 0.5459 | 0.5431 | 0.5505 |
+| 4 | 13 | 0.6786 | 0.7158 | 0.6835 | 0.7062 | 0.7077 | 0.6936 | 0.6950 | 0.6843 | 0.6847 | 0.6949 | 0.6912 | 0.7109 |
+| mean |  | 0.5575 | 0.6026 | 0.5922 | 0.5946 | 0.5932 | 0.5832 | 0.5850 | 0.5719 | 0.5727 | 0.5933 | 0.5846 | 0.6015 |
+
+**Kvasir rep full** (in-domain; 100 frames per split)
+
+| split | n | no_finetune | qaoa D10 | qaoa D11 | pool_random | hardest_k | all_800 | random_k | kcenter | craig | align_topk | gradmatch_omp | qubo_div |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 100 | 0.8947 | 0.8948 | 0.8966 | 0.8952 | 0.8958 | 0.8991 | 0.8987 | 0.8980 | 0.8971 | 0.8987 | 0.8934 | 0.8968 |
+| 1 | 100 | 0.8743 | 0.8893 | 0.8848 | 0.8870 | 0.8848 | 0.8888 | 0.8866 | 0.8873 | 0.8804 | 0.8879 | 0.8733 | 0.8848 |
+| 2 | 100 | 0.8945 | 0.8847 | 0.8809 | 0.8886 | 0.8870 | 0.8898 | 0.8932 | 0.8845 | 0.8892 | 0.8911 | 0.8803 | 0.8872 |
+| 3 | 100 | 0.8856 | 0.8838 | 0.8842 | 0.8827 | 0.8822 | 0.8856 | 0.8870 | 0.8839 | 0.8847 | 0.8869 | 0.8784 | 0.8839 |
+| 4 | 100 | 0.9076 | 0.9041 | 0.8975 | 0.9030 | 0.8998 | 0.9047 | 0.9073 | 0.9013 | 0.9042 | 0.9023 | 0.8978 | 0.8979 |
+| mean |  | 0.8913 | 0.8914 | 0.8888 | 0.8913 | 0.8899 | 0.8936 | 0.8946 | 0.8910 | 0.8911 | 0.8934 | 0.8846 | 0.8901 |
+
+Reading: fine-tuning on any 100-frame selection raises CVC hard Dice from about 0.48 to
+0.55-0.60 and CVC full Dice from 0.77 to 0.79-0.81, and leaves in-domain Kvasir Dice
+unchanged (0.89). The circuit's selections have the highest mean on CVC (0.600 hard,
+0.809-0.810 full), ahead of `hardest_k` by 0.006-0.007 on hard frames and 0.001-0.002 on all
+frames; these margins are within noise (see the confidence intervals above). On Kvasir full
+they are level with or slightly below the other methods.
+
 ## Conclusions
 
 1. The 10-qubit QAOA circuit works as an optimiser in simulation: it samples the exact
