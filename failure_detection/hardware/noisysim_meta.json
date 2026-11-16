@@ -1,0 +1,19 @@
+{
+  "backend": "noisy simulator (fake_torino)",
+  "shots": 1000,
+  "pilot": false,
+  "physical_qubits": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "two_qubit_gates_entangled": 56,
+  "depth_entangled": 195,
+  "two_qubit_gates_product": 0,
+  "depth_product": 11
+}

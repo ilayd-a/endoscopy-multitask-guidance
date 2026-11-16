@@ -27,3 +27,8 @@ results/bhi_multiseed/run.log
 results/bhi_multiseed/run.pid
 results/bhi_multiseed_smoke*/
 results/bhi_multiseed_mps_smoke/
+failure_detection/features_*.csv
+failure_detection/*.log
+failure_detection/results_*/*.png
+failure_detection/hardware/kernel_scatter.png
+dataset/polypgen/

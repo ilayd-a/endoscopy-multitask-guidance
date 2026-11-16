@@ -1,0 +1,30 @@
+{
+  "features": "failure_detection\\features_cvc.csv",
+  "synthetic": false,
+  "self_test": false,
+  "out": "failure_detection\\results_hm_q4",
+  "thresholds": [
+    0.5,
+    0.2
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "folds": 5,
+  "n_qubits": 4,
+  "reps": 2,
+  "topology": "linear",
+  "n_boot": 2000,
+  "no_reference": true,
+  "jobs": 12,
+  "feature_prefix": "f_hm_",
+  "n_frames": 612,
+  "n_sequences": 29,
+  "n_raw_features": 27,
+  "python": "3.12.3",
+  "numpy": "2.5.4",
+  "sklearn": "1.9.1",
+  "runtime_s": 146.9
+}

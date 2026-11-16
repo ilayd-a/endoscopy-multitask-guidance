@@ -1,0 +1,25 @@
+threshold,question,model_a,model_b,metric,delta,ci95_low,ci95_high,p_value,seeds_a_better,ci_excludes_zero
+0.5,Does entanglement help? (main ablation),q_entangled,q_product,auroc,0.01740612695668875,-0.007359527427817622,0.044183436100559116,0.177,3/3,False
+0.5,Does entanglement help? (main ablation),q_entangled,q_product,auprc,0.05387270725472093,-0.0038553877722578137,0.12365802350411201,0.067,3/3,False
+0.5,Quantum vs best classical on the same 8 features,q_entangled,mlp,auroc,-0.012940555075386606,-0.04050671204144819,0.01671101357271564,0.406,1/3,False
+0.5,Quantum vs best classical on the same 8 features,q_entangled,mlp,auprc,-0.09173789073875982,-0.15254140367259322,-0.015432843503993333,0.015,0/3,True
+0.5,Quantum kernel vs classical kernel,q_entangled,rbf_svm,auroc,-0.00026409296072216204,-0.02259905452669058,0.02412012362136989,0.935,2/3,False
+0.5,Quantum kernel vs classical kernel,q_entangled,rbf_svm,auprc,0.0007702960555142635,-0.07547388638850121,0.0765473781043557,0.993,2/3,False
+0.5,Product-state circuit vs classical kernel,q_product,rbf_svm,auroc,-0.017670219917410912,-0.04906996275359896,0.016918353851367366,0.277,1/3,False
+0.5,Product-state circuit vs classical kernel,q_product,rbf_svm,auprc,-0.05310241119920667,-0.16301131064806013,0.045301651451187495,0.273,1/3,False
+0.5,Quantum vs best training-free uncertainty score,q_entangled,u_mask_entropy,auroc,-0.0708249303754922,-0.11518413919567386,-0.02138571224011168,0.004,0/3,True
+0.5,Quantum vs best training-free uncertainty score,q_entangled,u_mask_entropy,auprc,-0.18303724951789202,-0.2693308318404124,-0.07090077302649989,0.001,0/3,True
+0.5,Best classical vs best training-free uncertainty score,mlp,u_mask_entropy,auroc,-0.057884375300105595,-0.10418700373275916,-0.008993325250892522,0.022,0/3,True
+0.5,Best classical vs best training-free uncertainty score,mlp,u_mask_entropy,auprc,-0.0912993587791322,-0.16696466195093349,-0.00716125807840547,0.035,0/3,True
+0.2,Does entanglement help? (main ablation),q_entangled,q_product,auroc,-0.0361689814814814,-0.10163234062798189,0.019067215207389056,0.207,0/3,False
+0.2,Does entanglement help? (main ablation),q_entangled,q_product,auprc,-0.07437788257990474,-0.17072356059460222,0.009367968673197162,0.106,1/3,False
+0.2,Quantum vs best classical on the same 8 features,q_entangled,mlp,auroc,-0.054205246913580196,-0.11272575974056935,-0.006067255196384835,0.014,0/3,True
+0.2,Quantum vs best classical on the same 8 features,q_entangled,mlp,auprc,-0.0860805406228945,-0.15509067218894917,-0.019112471669613405,0.001,0/3,True
+0.2,Quantum kernel vs classical kernel,q_entangled,rbf_svm,auroc,-0.05295138888888873,-0.1397288783044475,0.016669345820520026,0.16,0/3,False
+0.2,Quantum kernel vs classical kernel,q_entangled,rbf_svm,auprc,0.04212062051336252,-0.03770057622470119,0.14839949755847262,0.359,1/3,False
+0.2,Product-state circuit vs classical kernel,q_product,rbf_svm,auroc,-0.01678240740740733,-0.04852904421995678,0.017221797836943595,0.319,2/3,False
+0.2,Product-state circuit vs classical kernel,q_product,rbf_svm,auprc,0.11649850309326726,0.011157384626975736,0.25461680267047354,0.028,3/3,True
+0.2,Quantum vs best training-free uncertainty score,q_entangled,u_mask_entropy,auroc,-0.1303530092592592,-0.21297943798218333,-0.043796140193294975,0.0,0/3,True
+0.2,Quantum vs best training-free uncertainty score,q_entangled,u_mask_entropy,auprc,-0.13481024060212043,-0.22962270083889286,-0.04146597121324465,0.0,0/3,True
+0.2,Best classical vs best training-free uncertainty score,mlp,u_mask_entropy,auroc,-0.076147762345679,-0.13913762503299332,-0.021901845897241926,0.001,0/3,True
+0.2,Best classical vs best training-free uncertainty score,mlp,u_mask_entropy,auprc,-0.04872969997922594,-0.11473619833928676,0.0021973228315566775,0.059,0/3,False

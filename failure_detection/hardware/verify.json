@@ -1,0 +1,13 @@
+{
+  "entangled": {
+    "max_abs_err_statevector": 5.995204332975845e-15,
+    "noiseless_mae": 0.01021839607784191,
+    "frac_within_4sigma": 1.0
+  },
+  "product": {
+    "max_abs_err_statevector": 5.329070518200751e-15,
+    "noiseless_mae": 0.00459688539049404,
+    "frac_within_4sigma": 1.0
+  },
+  "passed": true
+}
