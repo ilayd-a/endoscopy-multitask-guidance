@@ -155,7 +155,7 @@ def main() -> None:
         "--dataset",
         type=str,
         default="cvc",
-        choices=["cvc", "kvasir", "split_csv", "split_folder"],
+        choices=["cvc", "kvasir", "polypgen", "split_csv", "split_folder"],
         help="Dataset loader to use. Active default is CVC-ClinicDB.",
     )
     parser.add_argument("--dataset-root", type=Path, default=None)

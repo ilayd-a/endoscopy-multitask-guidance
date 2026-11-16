@@ -51,6 +51,9 @@ Evaluation needs ground-truth image / mask pairs and a reproducible split.
 Supported dataset loaders:
 
 - `cvc`: CVC-ClinicDB layout with `metadata.csv` and an official split artifact.
+- `polypgen`: PolypGen 2021 positive frames (`images/` + `masks/` with matching
+  file names). External test set only, so `--split` is ignored. Frames with an
+  empty mask are skipped.
 - `split_csv`: generic `splits.csv` layout from the data team.
 - `kvasir`: Kvasir split-folder or `Kvasir-SEG/splits.csv` layout.
 - `split_folder`: generic `train/val/test/images` and `train/val/test/masks`.

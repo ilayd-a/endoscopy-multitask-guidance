@@ -112,7 +112,7 @@ def main() -> None:
         "--dataset",
         type=str,
         default="cvc",
-        choices=["cvc", "kvasir", "split_csv", "split_folder"],
+        choices=["cvc", "kvasir", "polypgen", "split_csv", "split_folder"],
     )
     parser.add_argument("--dataset-root", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)

@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CVC_ROOT = PROJECT_ROOT / "dataset" / "CVC-ClinicDB"
 DEFAULT_SPLIT_ROOT = PROJECT_ROOT / "dataset" / "data"
 DEFAULT_KVASIR_ROOT = PROJECT_ROOT / "dataset" / "Kvasir-SEG"
+DEFAULT_POLYPGEN_ROOT = PROJECT_ROOT / "dataset" / "PolypGen" / "positive"
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ def load_samples(
             else DEFAULT_SPLIT_ROOT
         )
         return load_kvasir_samples(root, split)
+    if dataset == "polypgen":
+        root = dataset_root or DEFAULT_POLYPGEN_ROOT
+        return load_polypgen_samples(root)
     if dataset == "split_csv":
         if dataset_root is None:
             raise ValueError("--dataset-root is required when --dataset split_csv is used")
@@ -246,6 +250,53 @@ def load_split_folder_samples(dataset_root: Path, split: str) -> list[EvalSample
         if not mask_path.exists():
             raise FileNotFoundError(f"Missing mask for {image_path.name}")
         samples.append(EvalSample(sample_id=image_path.name, image_path=image_path, mask_path=mask_path))
+    return samples
+
+
+def load_polypgen_samples(dataset_root: Path) -> list[EvalSample]:
+    """Load PolypGen 2021 positive frames (external evaluation only).
+
+    Expected layout, as in PolypGen2021_MultiCenterData_v3/positive:
+        <dataset_root>/images/<name>.<ext>
+        <dataset_root>/masks/<name>.<ext>   (same file name as the image)
+
+    PolypGen is used purely as an external test set, so there is no train/val/
+    test split and the --split argument is ignored. Frames whose mask is
+    completely empty are skipped because Dice/IoU are undefined for them.
+    """
+    image_dir = dataset_root / "images"
+    mask_dir = dataset_root / "masks"
+    if not image_dir.exists() or not mask_dir.exists():
+        raise FileNotFoundError(
+            f"Expected PolypGen 'images/' and 'masks/' folders under {dataset_root}. "
+            "Pass --dataset-root pointing at the PolypGen 'positive' folder."
+        )
+
+    image_paths = sorted(
+        path for path in image_dir.iterdir()
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+    )
+    samples: list[EvalSample] = []
+    missing_mask = 0
+    empty_mask = 0
+    for image_path in image_paths:
+        mask_path = mask_dir / image_path.name
+        if not mask_path.exists():
+            missing_mask += 1
+            continue
+        if load_binary_mask(mask_path).sum() == 0:
+            empty_mask += 1
+            continue
+        samples.append(
+            EvalSample(sample_id=image_path.name, image_path=image_path, mask_path=mask_path)
+        )
+
+    if not samples:
+        raise FileNotFoundError(f"No usable PolypGen image/mask pairs found under {dataset_root}")
+    print(
+        f"PolypGen: {len(samples)} usable frames "
+        f"({missing_mask} without a mask, {empty_mask} with an empty mask skipped)"
+    )
     return samples
 
 

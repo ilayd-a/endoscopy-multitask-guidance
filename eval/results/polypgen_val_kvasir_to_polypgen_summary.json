@@ -1,0 +1,68 @@
+{
+  "dataset": "polypgen",
+  "split": "val",
+  "run_name": "kvasir_to_polypgen",
+  "num_samples": 1412,
+  "metrics": {
+    "dice": {
+      "mean": 0.7194,
+      "std": 0.3213,
+      "min": 0.0,
+      "max": 0.9898
+    },
+    "iou": {
+      "mean": 0.6414,
+      "std": 0.3218,
+      "min": 0.0,
+      "max": 0.9797
+    },
+    "precision": {
+      "mean": 0.7121,
+      "std": 0.3277,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "recall": {
+      "mean": 0.8078,
+      "std": 0.3174,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "f2": {
+      "mean": 0.7504,
+      "std": 0.3186,
+      "min": 0.0,
+      "max": 0.9947
+    },
+    "mae": {
+      "mean": 0.0402,
+      "std": 0.0683,
+      "min": 0.0008,
+      "max": 0.5471
+    },
+    "boundary_f1": {
+      "mean": 0.512,
+      "std": 0.2873,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "pointing_game": {
+      "mean": 0.8732,
+      "std": 0.3327,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "peak_center_dist": {
+      "mean": 35.8451,
+      "std": 42.3787,
+      "min": 0.22,
+      "max": 257.17
+    },
+    "coherence_mer": {
+      "mean": 0.6161,
+      "std": 0.298,
+      "min": 0.0,
+      "max": 0.9839
+    }
+  }
+}

@@ -79,6 +79,60 @@ bash dataset/dataset_b/prepare_cvc.sh
 
 Raw dataset folders and archives are intentionally ignored by Git.
 
+### PolypGen (external, optional)
+
+PolypGen 2021 (multi-center, `PolypGen2021_MultiCenterData_v3`) is used as a
+second external evaluation set. The release stores single frames per center in
+`data_C1` to `data_C6` (`images_Cn/` and `masks_Cn/`, masks named
+`<image>_mask.jpg`). The preparation script gathers them into
+`dataset/PolypGen/positive/{images,masks}` with matching file names and writes
+`manifest.csv` (frame, center, size, mask pixels):
+
+```bash
+python3 dataset/dataset_c/prepare_polypgen.py \
+  --source /path/to/PolypGen2021_MultiCenterData_v3
+```
+
+Of the 1,537 single frames, 1,412 have a non-empty mask and are kept. The 125
+frames with empty masks are dropped because Dice/IoU are undefined for them.
+The sequence frames in `sequenceData/` and `imagesAll_positive/` have no masks
+and are not used.
+
+```bash
+PYTHONPATH=. python3 models/heatmap_pretrained.py \
+  --image-dir dataset/PolypGen/positive/images \
+  --num-samples 1412 \
+  --output-dir output/domain_shift_kvasir_to_polypgen
+
+PYTHONPATH=eval python3 eval/evaluate_outputs.py \
+  --dataset polypgen \
+  --dataset-root dataset/PolypGen/positive \
+  --outputs-dir output/domain_shift_kvasir_to_polypgen \
+  --run-name kvasir_to_polypgen \
+  --results-dir eval/results
+```
+
+`--num-samples` must cover every image in the folder. The output files are named
+`polypgen_val_*` only because `--split` defaults to `val`; PolypGen has no
+splits and the argument is ignored.
+
+Single-run results for the Kvasir-trained pretrained U-Net on PolypGen (1,412
+frames, threshold 0.5, PCD in pixels at 256 x 256):
+
+| Center | Frames | Dice | IoU | Recall | PG | PCD (px) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| C1 | 251 | 0.768 | 0.687 | 0.835 | 0.944 | 30.9 |
+| C2 | 270 | 0.765 | 0.695 | 0.845 | 0.907 | 32.1 |
+| C3 | 456 | 0.837 | 0.761 | 0.876 | 0.978 | 24.5 |
+| C4 | 146 | 0.501 | 0.420 | 0.732 | 0.664 | 50.6 |
+| C5 | 206 | 0.486 | 0.396 | 0.633 | 0.655 | 62.6 |
+| C6 | 83 | 0.743 | 0.669 | 0.796 | 0.880 | 33.1 |
+| All | 1412 | 0.719 | 0.641 | 0.808 | 0.873 | 35.8 |
+
+Performance varies strongly by center, with C4 and C5 well below the others.
+The model produced an empty mask for 64 of the 1,412 frames. The overall PCD
+excludes one frame whose predicted heatmap gives an infinite distance.
+
 ## Headline Results
 
 All results below use masks thresholded at 0.5. PG and PCD are reported for
